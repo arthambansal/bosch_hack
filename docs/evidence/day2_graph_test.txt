@@ -1,0 +1,148 @@
+Failed to find real location of C:\Users\Admin\miniconda3\python.exe
+[37m[22:33:35] AUTOPILOT start. Goal: what if redis dies?[0m
+[93m[22:33:35] [Cartographer] no valid source hypotheses available; using rule fallback[0m
+[96m[22:33:35] [Cartographer] single points of failure: ['redis', 'db'][0m
+[37m[22:33:35] [graph] cartographer done[0m
+[96m[22:33:35] AGENT step 1: (rule-based fallback) kill redis[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[92m[22:33:35] [Governor] approved E1 kill redis[0m
+[37m[22:33:35] [graph] governor done[0m
+[37m[22:33:35] [graph] approval done[0m
+[37m[22:33:35] [graph] execute done[0m
+[37m[22:33:35] [graph] evaluate done[0m
+[96m[22:33:35] [Diagnostician] E1 root cause: worker crashed during the fault and has no restart policy, so it stayed down[0m
+[37m[22:33:35] [graph] diagnostician done[0m
+[96m[22:33:35] AGENT step 2: (rule-based fallback) partition db[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[92m[22:33:35] [Governor] approved E2 partition db[0m
+[37m[22:33:35] [graph] governor done[0m
+[37m[22:33:35] [graph] approval done[0m
+[37m[22:33:35] [graph] execute done[0m
+[37m[22:33:35] [graph] evaluate done[0m
+[96m[22:33:35] AGENT step 3: (rule-based fallback) pause vote[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[92m[22:33:35] [Governor] approved E3 pause vote[0m
+[37m[22:33:35] [graph] governor done[0m
+[37m[22:33:35] [graph] approval done[0m
+[37m[22:33:35] [graph] execute done[0m
+[37m[22:33:35] [graph] evaluate done[0m
+[96m[22:33:35] AGENT step 4: (rule-based fallback) latency redis[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[92m[22:33:35] [Governor] approved E4 latency redis[0m
+[37m[22:33:35] [graph] governor done[0m
+[37m[22:33:35] [graph] approval done[0m
+[37m[22:33:35] [graph] execute done[0m
+[37m[22:33:35] [graph] evaluate done[0m
+[96m[22:33:35] AGENT step 5: (rule-based fallback) spike result[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[92m[22:33:35] [Governor] approved E5 spike result[0m
+[37m[22:33:35] [graph] governor done[0m
+[37m[22:33:35] [graph] approval done[0m
+[37m[22:33:35] [graph] execute done[0m
+[37m[22:33:35] [graph] evaluate done[0m
+[96m[22:33:35] AGENT step 6: (rule-based fallback) COMBINED: worker down, then redis crash[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[92m[22:33:35] [Governor] approved E6 COMBINED: worker down, then redis crash (needs human sign-off)[0m
+[37m[22:33:35] [graph] governor done[0m
+[92m[22:33:35] [Human] approved E6[0m
+[37m[22:33:35] [graph] approval done[0m
+[37m[22:33:35] [graph] execute done[0m
+[37m[22:33:35] [graph] evaluate done[0m
+[96m[22:33:35] [Diagnostician] E6 root cause: worker crashed during the fault and has no restart policy, so it stayed down[0m
+[37m[22:33:35] [graph] diagnostician done[0m
+[37m[22:33:35] [graph] experimenter done[0m
+[96m[22:33:35] [Remediator] (rules) applying redis-durable for ['E1', 'E6']: The queue lost accepted work when it crashed. Turn on append-only persistence (fsync always).[0m
+[96m[22:33:35] [Remediator] (rules) applying restart-policy for ['E1', 'E6']: Crashed containers stayed down until a human restarted them. Add `restart: unless-stopped`.[0m
+[37m[22:33:35] [graph] remediator done[0m
+[37m[22:33:35] [Verifier] re-running E1 against the fixed system[0m
+[37m[22:33:35] [Verifier] re-running E6 against the fixed system[0m
+[92m[22:33:35] [Verifier] E1 RPN 700 -> 98 (86% lower)[0m
+[92m[22:33:35] [Verifier] E6 RPN 600 -> 84 (86% lower)[0m
+[37m[22:33:35] [graph] verify done[0m
+[93m[22:33:35] [Regression] export not available: measured fault window required before exporting[0m
+[93m[22:33:35] [Regression] export not available: measured fault window required before exporting[0m
+[92m[22:33:35] [Reporter] report written: C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\runs\auto_20261010_223335\report.md (resilience 48/100, grade F)[0m
+[37m[22:33:35] [graph] reporter done[0m
+[95m[22:33:35] [Governor] REJECTED EX double kill: would take down 2 data stores at once (db, redis); policy allows one[0m
+[96m[22:33:35] [T] started: g[0m
+[93m[22:33:35] [T] tried to conclude with 0 tool call(s); evidence required, continuing[0m
+[93m[22:33:35] [T] tried to conclude with 0 tool call(s); evidence required, continuing[0m
+[96m[22:33:35] [T] thinks: t[0m
+[96m[22:33:35] [T] calls probe({"a": 1})[0m
+[96m[22:33:35] [T] thinks: t[0m
+[96m[22:33:35] [T] calls probe({"a": 2})[0m
+[96m[22:33:35] [T] conclusion: t[0m
+[96m[22:33:35] [T2] started: g[0m
+[96m[22:33:35] [T2] thinks: t[0m
+[96m[22:33:35] [T2] calls probe({"a": 1})[0m
+[96m[22:33:35] [T2] thinks: t[0m
+[93m[22:33:35] [T2] repeated probe({"a": 1}), skipped[0m
+[96m[22:33:35] [T2] thinks: t[0m
+[93m[22:33:35] [T2] asked for unknown tool 'nope' with {}[0m
+[96m[22:33:35] [T2] thinks: t[0m
+[96m[22:33:35] [T2] calls probe2({})[0m
+[96m[22:33:35] [T2] conclusion: t[0m
+[96m[22:33:35] [T3] started: g[0m
+[96m[22:33:35] [T3] thinks: t[0m
+[93m[22:33:35] [T3] asked for unknown tool 'exec' with {"cmd": "ls"}[0m
+[96m[22:33:35] [T3] thinks: t[0m
+[93m[22:33:35] [T3] asked for unknown tool 'exec' with {"cmd": "ls"}[0m
+[96m[22:33:35] [T3] thinks: t[0m
+[93m[22:33:35] [T3] asked for unknown tool 'exec' with {"cmd": "ls"}[0m
+[93m[22:33:35] [T3] the AI kept missing; gathering basic evidence with read-only tools[0m
+[96m[22:33:35] [T3] (code) calls probe({"a": 1})[0m
+[96m[22:33:35] [T3] (code) calls probe2({})[0m
+[96m[22:33:35] [T3] conclusion: t[0m
+
+>>> HUMAN APPROVAL NEEDED [662b93d92439]: q
+    why: r
+    type y or n (or use the dashboard, 8s): 
+>>> HUMAN APPROVAL NEEDED [b58f0278e952]: q
+    why: r
+    type y or n (or use the dashboard, 8s): 
+>>> HUMAN APPROVAL NEEDED [31e8a0273dcb]: q
+    why: r
+    type y or n (or use the dashboard, 1s): (no answer, denied)
+
+>>> HUMAN APPROVAL NEEDED [24ff33ce7bad]: q
+    why: r
+    type y or n (or use the dashboard, 30s): (STOP requested, denied)
+
+>>> HUMAN APPROVAL NEEDED [ef1b13c51d62]: q?
+    why: r
+    type y or n (or use the dashboard, 8s): [37m[22:33:38] AUTOPILOT start. Goal: find the weakest points[0m
+[93m[22:33:38] [Cartographer] no valid source hypotheses available; using rule fallback[0m
+[96m[22:33:38] [Cartographer] single points of failure: ['redis', 'db'][0m
+[37m[22:33:38] [graph] cartographer done[0m
+[96m[22:33:38] AGENT step 1: (rule-based fallback) kill redis[0m
+[37m[22:33:39] [graph] experimenter done[0m
+[92m[22:33:39] [Governor] approved E1 kill redis[0m
+[37m[22:33:39] [graph] governor done[0m
+[37m[22:33:39] [graph] approval done[0m
+[37m[22:33:39] [graph] execute done[0m
+[37m[22:33:39] [graph] evaluate done[0m
+[95m[22:33:39] STOP file detected before node 'diagnostician': autopilot halted, restoring everything[0m
+[92m[22:33:39] [Reporter] report written: C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\runs\auto_20261010_223338\report.md (resilience 95/100, grade A)[0m
+PASS agent cannot conclude without 2 real tool calls
+PASS repeated call skipped, unknown tool not counted
+PASS after 3 wasted steps, code gathers evidence and agent concludes
+PASS approval {approved:true/false} and legacy {answer} formats
+PASS STOP ends an approval wait at once
+PASS STOP clears the pending approval request
+PASS gate: decision right after publish is not lost; old decision file does not leak in
+PASS gate: wrong/stale token ignored, right token accepted
+PASS gate: unique token + expiry published
+PASS gate: duplicate decision for a finished gate ignored, expiry denies
+PASS gate sync: stale/expired/no_pending give 409; 8 simultaneous submits -> exactly one 200; late submit 409
+PASS gate sync: lock excludes a second holder, breaks a stale lock, always released
+PASS gate sync: live_state advertises gate_sync v1
+PASS STOP halts the whole run after the current experiment
+PASS partial report written after STOP
+PASS ran 3+ experiments
+PASS human approval was asked
+PASS diagnostician ran on bad results
+PASS fixes applied
+PASS verification improved
+PASS report written
+PASS safety rejects double data-store kill
+ALL CHECKS PASSED

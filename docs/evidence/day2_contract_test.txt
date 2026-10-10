@@ -1,0 +1,38 @@
+Failed to find real location of C:\Users\Admin\miniconda3\python.exe
+[93m[22:33:34] [Regression] replay not available: [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Documents\\Codex\\2026-10-10\\referenced-chatgpt-conversation-this-is-an-3\\tejas-fresh\\scenarios\\does-not-exist.json'[0m
+PASS signature TruthOracle.__init__('self', 'cfg', 'prober', 'interval_s', 'grace_s')
+PASS signature TruthOracle.window('self', 't_start', 't_end')
+PASS signature patches.suggest_patches('investigations', 'results')
+PASS signature heal.fix_entries('fixes',)
+PASS signature diagnostician.diagnose_blind('res', 'cfg', 'graph', 'offline')
+PASS signature diagnostician.remember_confirmed('res', 'fault', 'root_cause')
+PASS signature report_extras.impact_of('result',)
+PASS signature report_extras.scorecard('results', 'verification', 'trials')
+PASS signature report_extras.postmortem('result', 'investigation', 'impact')
+PASS signature regression.export_scenario('result', 'investigation', 'run_dir')
+PASS signature regression.replay('path', 'cfg')
+PASS signature regression.list_scenarios()
+PASS signature notify.notify('kind', 'title', 'text', 'fields')
+PASS signature mystery.menu('cfg',)
+PASS signature mystery.run_trial('choice_id', 'cfg', 'graph', 'offline', 'chosen_by')
+PASS signature mystery.wait_loop('cfg', 'graph', 'offline')
+PASS truth snapshot shape
+PASS truth window keys
+PASS impact_of shape
+PASS fix_entries shape
+PASS suggest_patches shape
+PASS regression list shape
+PASS notify without webhook is a silent no-op
+PASS diagnose_blind shape
+PASS replay never raises, returns passed flag
+PASS mystery menu items valid
+PASS fixture approval_pending.json matches contract
+PASS fixture completed_with_fixes.json matches contract
+PASS fixture gray_failure.json matches contract
+PASS fixture idle.json matches contract
+PASS fixture mystery_revealed.json matches contract
+PASS validator rejects diverged while monitoring degraded
+PASS validator rejects applied code suggestion
+PASS validator rejects early answer
+PASS canary votes excluded from delivery count
+ALL CHECKS PASSED

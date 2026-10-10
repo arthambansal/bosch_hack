@@ -1,0 +1,5 @@
+Failed to find real location of C:\Users\Admin\miniconda3\python.exe
+PASS impact weighted by requests, measured/proxy outage labelled, unknown values preserved
+PASS scorecard counts match hand calculation; postmortem cites timeline and evidence
+PASS Reporter integration produces both formats, escapes HTML, retains rollback and AI fallback
+ALL CHECKS PASSED
