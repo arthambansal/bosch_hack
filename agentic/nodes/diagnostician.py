@@ -393,7 +393,7 @@ def diagnose_blind(res, cfg, graph, offline=False):
                               f"compared features={','.join(match['compared_features'])}; not current confirmation"],
                  "memory_hit": True}
         source = "memory"
-    elif candidates[0]["confidence"] < 0.6 and not offline:
+    if not offline:
         schema = {"fault": "kill|pause|partition|latency|spike", "target": "configured service",
                   "confidence": "number 0..1", "top3": [{"fault": "type", "target": "service", "confidence": 0.3}],
                   "root_cause": "evidence-backed hypothesis with limitations", "evidence": ["quoted measurement"]}
@@ -401,6 +401,7 @@ def diagnose_blind(res, cfg, graph, offline=False):
         context.pop("injected_action", None)
         context["container_state"] = states
         context["candidates"] = candidates
+        context["configured_services"] = sorted(cfg.get("services", {}))
         agent = ReActAgent("BlindDiagnostician", "an SRE diagnosing an unknown fault from measurements only. "
             "You do not know the injection. Rank fault/target pairs, cite actual evidence, and state uncertainty. "
             "Post-restoration state does not prove fault-window health. Never read files or injection metadata.",
@@ -410,6 +411,7 @@ def diagnose_blind(res, cfg, graph, offline=False):
             checked = _validated_blind_guess(answer, cfg)
             if checked:
                 guess, source = checked, "ai"
+                memory = None
         except Exception as exc:
             LIVE.event("warn", f"[Diagnostician] blind AI unavailable ({type(exc).__name__}); using evidence ranking")
     seconds = time.perf_counter() - t0
@@ -432,36 +434,47 @@ def _validated_blind_guess(answer, configuration):
     """Validate every ranked pair, not just the permissive shared validator."""
     import math
     from core.contract_v5 import validate_guess
-    if not isinstance(answer, dict):
+    LIVE.event("warn", "[Diagnostician] blind AI raw answer: " + json.dumps(answer, default=str)[:300])
+    def reject(reason):
+        LIVE.event("warn", "[Diagnostician] blind AI answer rejected: " + reason)
         return None
+    if not isinstance(answer, dict):
+        return reject("answer is not an object")
     guess = {key: answer.get(key) for key in ("fault", "target", "confidence", "top3", "root_cause", "evidence")}
     guess["memory_hit"] = False
     try:
-        if validate_guess(guess, configuration.get("services") or {}):
-            return None
+        faults = {"kill", "pause", "partition", "latency", "spike"}
+        services = configuration.get("services") or {}
+        if guess["fault"] not in faults or guess["target"] not in services:
+            return reject("unknown primary fault or unconfigured target")
         if not isinstance(guess["root_cause"], str) or len(guess["root_cause"].strip()) < 25:
-            return None
-        if not guess["evidence"] or not all(isinstance(fact, str) and fact.strip() for fact in guess["evidence"]):
-            return None
-        seen = set()
+            return reject("root_cause must contain at least 25 characters")
+        if not isinstance(guess["evidence"], list) or not guess["evidence"] or not all(isinstance(fact, str) and fact.strip() for fact in guess["evidence"]):
+            return reject("evidence must contain nonempty strings")
+        if not isinstance(guess["top3"], list) or not guess["top3"]:
+            return reject("top3 must be a nonempty list")
+        unique = {}
         for item in guess["top3"]:
             pair = (item["fault"], item["target"])
             confidence = item["confidence"]
-            if pair[0] not in ("kill", "pause", "partition", "latency", "spike") or pair[1] not in configuration.get("services", {}):
-                return None
-            if pair in seen or type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
-                return None
-            seen.add(pair)
-        if (guess["fault"], guess["target"]) != (guess["top3"][0]["fault"], guess["top3"][0]["target"]):
-            return None
-        if guess["confidence"] != guess["top3"][0]["confidence"]:
-            return None
-        weights = [item["confidence"] for item in guess["top3"]]
-        if weights != sorted(weights, reverse=True) or not math.isclose(sum(weights), 1.0, abs_tol=0.01):
-            return None
+            if pair[0] not in faults or pair[1] not in services:
+                return reject("unknown fault or unconfigured target in top3")
+            if type(confidence) not in (int, float) or not math.isfinite(confidence):
+                return reject("top3 confidence must be a finite number")
+            weight = min(1.0, max(0.0, confidence))
+            unique[pair] = max(unique.get(pair, 0), weight)
+        ranked = sorted(unique.items(), key=lambda p: -p[1])[:3]
+        total = sum(weight for _, weight in ranked)
+        guess["top3"] = [{"fault": pair[0], "target": pair[1],
+                          "confidence": weight / total if total else 1 / len(ranked)}
+                         for pair, weight in ranked]
+        guess.update(guess["top3"][0])
+        errors = validate_guess(guess, services)
+        if errors:
+            return reject("contract validation: " + str(errors))
         return guess
-    except (TypeError, KeyError, ValueError):
-        return None
+    except (TypeError, KeyError, ValueError) as exc:
+        return reject("malformed answer: " + str(exc))
 
 
 def remember_confirmed(res, fault, root_cause):

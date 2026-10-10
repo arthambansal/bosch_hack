@@ -101,7 +101,7 @@ class BlindTests(unittest.TestCase):
         D._BLIND_TIMINGS["M-old"] = {"seconds": 4.0, "source": "ai"}
         D.remember_confirmed(old, {"fault": "kill", "target": "redis"}, "SYNTHETIC Redis interruption")
         with patch.object(D, "ReActAgent") as agent, patch("time.perf_counter", side_effect=[20.0, 22.0]):
-            guess = D.diagnose_blind(self.result("M-new"), self.configuration, self.graph)
+            guess = D.diagnose_blind(self.result("M-new"), self.configuration, self.graph, offline=True)
         agent.assert_not_called()
         self.check(guess)
         self.assertTrue(guess["memory_hit"])
@@ -162,6 +162,47 @@ class BlindTests(unittest.TestCase):
         self.assertLess(guess["confidence"], 0.6)
         D.remember_confirmed({"id": "M-empty"}, {"fault": "kill", "target": "redis"}, "unsupported")
         self.assertFalse(self.path.exists())
+
+    def test_cascade_ranks_failed_dependency_before_consumer(self):
+        for target, downstream in [("redis", ["worker"]), ("worker", []), ("db", ["worker", "result"])]:
+            with self.subTest(target=target):
+                result = self.result()
+                result['observation']['events'] = [
+                    {'service': target, 'event': 'die', 'exit_code': 137, 't': 100},
+                    *[{'service': name, 'event': 'die', 'exit_code': 1, 't': 100} for name in downstream]]
+                result['stuck_services'] = downstream
+                result['stuck_details'] = {name: {'exit_code': 1} for name in downstream}
+                guess = D.diagnose_blind(result, self.configuration, self.graph, offline=True)
+                self.assertEqual((guess['fault'], guess['target']), ('kill', target))
+
+    def test_normalizes_weights_duplicates_and_primary(self):
+        answer = {'fault': 'pause', 'target': 'worker', 'confidence': 9,
+                  'root_cause': 'SYNTHETIC: Redis stopped before the consumer failed.',
+                  'evidence': ['redis die at t=100'],
+                  'top3': [{'fault': 'kill', 'target': 'worker', 'confidence': -1},
+                           {'fault': 'kill', 'target': 'redis', 'confidence': 2},
+                           {'fault': 'kill', 'target': 'redis', 'confidence': 0.4},
+                           {'fault': 'pause', 'target': 'db', 'confidence': 0.2}]}
+        original = copy.deepcopy(answer)
+        guess = D._validated_blind_guess(answer, self.configuration)
+        self.assertEqual((guess['fault'], guess['target']), ('kill', 'redis'))
+        self.assertEqual(len(guess['top3']), 3)
+        self.assertAlmostEqual(sum(c['confidence'] for c in guess['top3']), 1)
+        self.assertEqual(answer, original)
+        for field, value in [('fault', 'none'), ('target', 'vote_write'), ('root_cause', 'short'), ('evidence', [])]:
+            invalid = copy.deepcopy(answer)
+            invalid[field] = value
+            self.assertIsNone(D._validated_blind_guess(invalid, self.configuration))
+
+    def test_online_calls_ai_even_for_strong_rules(self):
+        result = self.result()
+        result['observation']['events'] = [{'service': 'redis', 'event': 'die', 'exit_code': 137, 't': 1}]
+        with patch.object(D, 'ReActAgent') as agent:
+            agent.return_value.run.return_value = ({}, [])
+            guess = D.diagnose_blind(result, self.configuration, self.graph)
+        agent.assert_called_once()
+        self.assertEqual(guess['target'], 'redis')
+        self.assertIn('candidates', agent.return_value.run.call_args.args[1])
 
 
 if __name__ == "__main__":
