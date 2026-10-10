@@ -7,8 +7,8 @@ export default function AgentWorkflow({ state, connected }) {
   const [selected, setSelected] = useState(null);
   const [view, setView] = useState('map');
   const candidate = activeNodeId(state.agent_active);
-  const active = connected && running(state.phase) && WORKFLOW_NODES.some(node => node.id === candidate) ? candidate : null;
-  const status = !connected ? 'Live status unavailable' : state.phase === 'ran' ? 'Run complete' : state.phase === 'idle' ? 'Idle' : active ? state.agent_active === 'human' ? 'Awaiting approval' : `${nodeLabel(active)} active` : 'Active step unknown';
+  const active = connected && !['stopped', 'completed'].includes(state.run_status) && running(state.phase) && WORKFLOW_NODES.some(node => node.id === candidate) ? candidate : null;
+  const status = !connected ? 'Live status unavailable' : state.run_status === 'stopping' ? 'Stopping' : state.run_status === 'stopped' ? 'Run stopped' : state.phase === 'ran' ? 'Run complete' : state.phase === 'idle' ? 'Idle' : active ? state.agent_active === 'human' ? 'Awaiting approval' : `${nodeLabel(active)} active` : 'Active step unknown';
   const selectedNode = WORKFLOW_NODES.find(node => node.id === selected);
   const outgoing = WORKFLOW_ROUTES.filter(route => route.from === selected);
   const drawn = selected ? outgoing : WORKFLOW_ROUTES.filter(route => route.overview);

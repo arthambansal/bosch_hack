@@ -18,7 +18,7 @@ export default function useControlRequest(scopeKey) {
     };
   }, []);
 
-  async function submit({ key, action, request, successMessage }) {
+  async function submit({ key, action, request, successMessage, onError, idempotent = false }) {
     // One approval slot is shared by Approve and Deny; STOP is shared by both
     // buttons. Also block re-submission after acceptance or an uncertain reply.
     if (!key || key !== currentScope.current || inFlight.current
@@ -34,8 +34,11 @@ export default function useControlRequest(scopeKey) {
       if (mounted.current) setResult({ key, action, status: 'success', message: successMessage });
     } catch (error) {
       const uncertain = error?.uncertain === true || error?.name === 'AbortError';
-      settled.current = { key, blocked: uncertain };
+      // A verified idempotent STOP may be manually retried after confirmation;
+      // ambiguous approval writes must remain blocked. Never retry automatically.
+      settled.current = { key, blocked: uncertain && !idempotent };
       if (mounted.current) setResult({ key, action, status: 'error', message: error?.message || 'The request could not be acknowledged. Inspect live state before retrying.' });
+      if (mounted.current) onError?.(error);
     } finally {
       clearTimeout(deadline);
       if (inFlight.current === pending) inFlight.current = null;

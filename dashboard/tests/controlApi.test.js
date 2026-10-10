@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTROL_CONTRACTS, createControlApi } from '../src/api/controlApi.js';
+import { CONTROL_CONTRACTS, createControlApi, pendingGateContext } from '../src/api/controlApi.js';
 
 // These adapters are test doubles. The opaque body and acknowledgement below
 // define no production gate identity, HTTP payload, or response schema.
@@ -14,18 +14,53 @@ function fixtureAdapter(overrides = {}) {
   };
 }
 
-test('production adapters remain unconfigured; all mutations fail before fetch', async t => {
+test('approval stays blocked and STOP requires an authoritative active run', async t => {
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => { calls += 1; });
   const api = createControlApi();
   assert.equal(CONTROL_CONTRACTS.approval, null);
-  assert.equal(CONTROL_CONTRACTS.stop, null);
+  assert.equal(CONTROL_CONTRACTS.stop.verified, true);
   assert.equal(api.getApprovalContext({ approval_request: { id: 'experiment-id' } }), null);
   assert.equal(api.getStopContext({ phase: 'running', run_dir: 'run' }), null);
-  for (const method of ['approve', 'deny', 'requestStop']) {
+  for (const method of ['approve', 'deny']) {
     await assert.rejects(api[method]({ key: 'not-a-verified-gate' }, { confirmed: true }), /unavailable/);
   }
+  await assert.rejects(api.requestStop(null, { confirmed: true }), /unavailable/);
   assert.equal(calls, 0);
+});
+
+test('real STOP adapter uses no body and verifies only the defined acknowledgement', async t => {
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (...args) => {
+    calls.push(args);
+    return new Response(JSON.stringify({ stop_requested: true }), { status: 202, headers: { 'content-type': 'application/json' } });
+  });
+  const api = createControlApi();
+  const context = api.getStopContext({ run_status: 'running', run_dir: 'test-run' });
+  await api.requestStop(context, { confirmed: true });
+  assert.equal(calls[0][0], '/stop');
+  assert.equal(calls[0][1].body, undefined);
+  assert.equal(api.getStopContext({ run_status: 'stopped', run_dir: 'test-run' }), null);
+});
+
+test('real STOP adapter rejects an unconfirmed response even if HTTP succeeds', async t => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ stop_requested: false }), { status: 202, headers: { 'content-type': 'application/json' } }));
+  const api = createControlApi();
+  await assert.rejects(api.requestStop({ key: 'test-run', run_dir: 'test-run' }, { confirmed: true }), error => error.uncertain === true);
+});
+
+test('pending gate checks use real gate_id and expiry, not reusable experiment ids', () => {
+  const state = { run_status: 'running', agent_active: 'human', approval_request: { gate_id: 'unique-gate', id: 'E6', created_at: 99, expires_at: 110 } };
+  assert.equal(pendingGateContext(state, 100).key, 'unique-gate');
+  assert.equal(pendingGateContext(state, 110), null);
+  assert.equal(pendingGateContext({ ...state, run_status: 'stopping' }, 100), null);
+  assert.equal(pendingGateContext({ ...state, approval_request: { id: 'E6' } }, 100), null);
+});
+
+test('409 carries the authoritative backend gate error for refresh handling', async t => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ error: 'expired' }), { status: 409, headers: { 'content-type': 'application/json' } }));
+  const api = createControlApi({ approval: fixtureAdapter() });
+  await assert.rejects(api.approve({ key: 'test-scope' }), error => error.status === 409 && error.code === 'expired' && /expired/.test(error.message));
 });
 
 test('STOP requires explicit confirmation even with a configured test adapter', async t => {

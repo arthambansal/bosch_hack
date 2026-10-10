@@ -8,7 +8,7 @@ export default function RunOverview({ state, connected, loading }) {
   const hasQueue = Array.isArray(state.queue);
   const guard = obj(state.guard);
   const phase = typeof state.phase === 'string' ? state.phase : 'unknown';
-  const phaseName = ({ ran: 'Run complete', idle: 'Idle', running: 'Running', baseline: 'Capturing baseline', healing: 'Applying fixes', healed: 'Fixes applied', reporting: 'Reporting' })[phase] || `Phase: ${phase}`;
+  const phaseName = ({ stopping: 'Stopping', stopped: 'Stopped', completed: 'Run complete' })[state.run_status] || ({ stopped: 'Stopped', ran: 'Run complete', idle: 'Idle', running: 'Running', baseline: 'Capturing baseline', healing: 'Applying fixes', healed: 'Fixes applied', reporting: 'Reporting' })[phase] || `Phase: ${phase}`;
   const guardText = guard.tripped === true ? 'Tripped' : guard.tripped === false ? 'Not tripped' : 'Unknown';
   const runName = state.run_dir ? String(state.run_dir).split(/[\\/]/).pop() : 'No run identified';
   return <section id="overview" className="run-overview" aria-labelledby="page-title">

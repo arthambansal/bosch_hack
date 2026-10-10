@@ -301,6 +301,16 @@ h1 > span { color: #9a633e; }
 .control-feedback.loading { color: #705028; background: #f8f2e8; border-color: #decda9; }
 .control-feedback.error { color: #813c31; background: #fbefea; border-color: #dfb9ab; }
 .stop-review { margin-top: 9px; }
+.run-progress { border-top: 1px solid #cbdccb; margin-top: 17px; padding-top: 15px; }
+.run-progress h3 { margin-bottom: 8px; }
+.run-progress > strong { font-size: 12px; display: block; }
+.run-progress p { font-size: 11px; color: var(--muted); margin: 6px 0; }
+.run-progress code { display: block; overflow-wrap: anywhere; font-size: 10px; line-height: 1.7; margin-top: 6px; }
+.backend-approval-result { padding: 10px; margin-top: 12px; border: 1px solid #bacdbc; border-radius: 6px; background: #f5f8f1; }
+.backend-approval-result strong, .backend-approval-result small { display: block; font-size: 11px; }
+.backend-approval-result small { margin-top: 5px; overflow-wrap: anywhere; }
+.approval-question { font-weight: 650; }
+.approval-steps { margin: 8px 0; padding-left: 15px; font-size: 10px; }
 .stop-dialog { width: min(500px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 26px; border: 1px solid #d2dfd2; border-radius: 13px; background: #f8faf6; color: var(--ink); box-shadow: 0 16px 70px #102f2b35; }
 .stop-dialog::backdrop { background: #102f2b99; }
 .stop-dialog-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 15px; }

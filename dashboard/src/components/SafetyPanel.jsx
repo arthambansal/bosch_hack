@@ -23,10 +23,14 @@ export default function SafetyPanel({ state, connected }) {
     <div className={`guard-instrument ${guard.tripped === true ? 'tripped' : ''}`}><div className="guard-dial"><svg viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="33" className={`dial-track ${ratio === null ? 'unavailable' : ''}`} />{ratio !== null && <circle cx="40" cy="40" r="33" className="dial-value" strokeDasharray={`${ratio * 207.35} 207.35`} transform="rotate(-90 40 40)" />}</svg><span>{ratio === null ? '—' : fmt(guard.ticks)}</span></div><div><strong>{status}</strong><p>{guard.tripped === undefined ? 'No guard telemetry supplied' : current ? 'Reported by the runtime guard' : 'Last reported guard state'}</p><small>{measurable ? `${fmt(guard.ticks)} / ${fmt(limits.breach_ticks)} consecutive breaches` : 'Breach counter unavailable'}</small></div></div>
     <dl className="safety-readouts"><div><dt>Error ceiling</dt><dd>{pct(limits.max_error_rate)}</dd></div><div><dt>p95 ceiling</dt><dd>{fmt(limits.max_p95_ms, ' ms')}</dd></div><div><dt>Elapsed fault time</dt><dd>{fmt(guard.elapsed, ' s')}</dd></div><div><dt>Hard time limit</dt><dd>{fmt(limits.max_experiment_s, ' s')}</dd></div></dl>
     {arr(guard.reasons).length > 0 && <ul className="guard-reasons">{guard.reasons.map((reason, index) => <li key={index}>{String(reason)}</li>)}</ul>}
+    <div className="run-progress" role="status"><h3>Run progress</h3><strong>{({ running: 'Running', stopping: 'Stopping — awaiting cleanup', stopped: 'Stopped (reported by backend)', completed: 'Completed (reported by backend)' })[controls?.runStatus] || 'Run status unavailable'}</strong>
+      <p>{obj(controls?.cleanup).done === true ? 'Backend marked cleanup done.' : 'Cleanup completion is unconfirmed.'}</p>
+      {typeof controls?.reportPath === 'string' && controls.reportPath ? <><small>Report path reported by backend</small><code>{controls.reportPath}</code></> : <small>No report path reported yet.</small>}
+    </div>
     <ApprovalPanel request={state.approval_request} phase={state.phase} connected={connected} />
     <div className="emergency-area"><div><h3>Emergency stop</h3><p>Stop the run and request cleanup.</p></div><StopControl />
       <ControlFeedback result={controls?.stopResult} />
-      <p id="stop-note">Unavailable until the endpoint and cancellation handling are verified. Acceptance does not confirm cleanup completion.</p>
+      <p id="stop-note">STOP requests cancellation and cleanup. Acceptance does not confirm cleanup completion; watch the backend run status above.</p>
       <button className="text-button stop-review" onClick={controls?.openStopDialog} disabled={!controls}>Review STOP confirmation <span aria-hidden="true">↗</span></button>
     </div>
   </section>;

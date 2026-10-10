@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react';
-// Schedule only after a response; abort in-flight work and timers on unmount.
+import { useCallback, useEffect, useRef, useState } from 'react';
+// Default polling remains 500 ms after each response. Explicit refresh coalesces
+// with an in-flight read rather than issuing a concurrent request.
 export default function useLiveState() {
  const [live, setLive] = useState({ state: {}, status: 'loading', error: '', received: null });
+ const refreshRef = useRef(null);
+ const refresh = useCallback(() => refreshRef.current?.(), []);
  useEffect(() => {
-  let disposed = false, timer, controller;
+  let disposed = false, timer, controller, inFlight = false, queued = false;
   async function poll() {
+   if (disposed) return;
+   if (inFlight) { queued = true; return; }
+   clearTimeout(timer);
+   inFlight = true;
    controller = new AbortController();
    const deadline = setTimeout(() => controller.abort(), 4000);
    try {
@@ -17,11 +24,14 @@ export default function useLiveState() {
     if (!disposed) setLive(previous => ({ ...previous, status: error instanceof SyntaxError ? 'malformed' : 'disconnected', error: `Unable to read /state: ${error.name === 'AbortError' ? 'request timed out' : error.message}. Retrying automatically. ${previous.received ? 'Showing the last received snapshot; telemetry may be stale.' : 'No snapshot received.'}` }));
    } finally {
     clearTimeout(deadline);
-    if (!disposed) timer = setTimeout(poll, 500);
+    inFlight = false;
+    if (!disposed) timer = setTimeout(poll, queued ? 0 : 500);
+    queued = false;
    }
   }
+  refreshRef.current = () => { if (inFlight) queued = true; else poll(); };
   poll();
-  return () => { disposed = true; clearTimeout(timer); controller?.abort(); };
+  return () => { disposed = true; clearTimeout(timer); controller?.abort(); refreshRef.current = null; };
  }, []);
- return live;
+ return { ...live, refresh };
 }
