@@ -22,7 +22,7 @@ _ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 _ASSET_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
                 ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json; charset=utf-8",
                 ".woff2": "font/woff2", ".map": "application/json; charset=utf-8"}
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(os.path.realpath(HERE))        # resolved once: a project folder reached through a symlink must not make every path check fail
 STATE = os.path.join(ROOT, "runs", "live_state.json")
 APPROVAL = os.path.join(ROOT, "runs", "approval.json")
 STOP = os.path.join(ROOT, "STOP")
