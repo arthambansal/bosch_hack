@@ -1,7 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { controlApi } from '../api/controlApi.js';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { controlApi, liveApprovalContext } from '../api/controlApi.js';
 import useControlRequest from '../hooks/useControlRequest.js';
-import { obj, running } from '../data.js';
 import StopConfirmationDialog from './StopConfirmationDialog.jsx';
 
 const ControlContext = createContext(null);
@@ -15,8 +14,10 @@ export default function ControlProvider({ live, children }) {
   const fresh = connected && typeof received === 'number' && now - received < 2000;
   // The adapter, not experiment id/name or an invented state field, must
   // validate and extract an authoritative gate/run identity.
-  const gate = fresh && state.phase === 'running' && state.agent_active === 'human'
-    && Object.keys(obj(state.approval_request)).length ? controlApi.getApprovalContext(state) : null;
+  const stopRequested = useRef(false);
+  const stopRun = useRef(state.run_dir);
+  if (stopRun.current !== state.run_dir) { stopRun.current = state.run_dir; stopRequested.current = false; }
+  const gate = liveApprovalContext(live, stopRequested.current, now);
   const run = fresh ? controlApi.getStopContext(state) : null;
   const approval = useControlRequest(gate?.key || null);
   const stop = useControlRequest(typeof state.run_dir === 'string' ? state.run_dir : null);
@@ -26,10 +27,12 @@ export default function ControlProvider({ live, children }) {
 
   function decide(approved) {
     if (!approvalAvailable) return;
+    const current = liveApprovalContext(live, stopRequested.current);
+    if (!current || current.key !== gate.key) return;
     approval.submit({
-      key: gate.key, action: approved ? 'approve' : 'deny',
-      request: signal => approved ? controlApi.approve(gate, { signal }) : controlApi.deny(gate, { signal }),
-      onError: error => { if (error.status === 409) refresh?.(); },
+      key: current.key, action: approved ? 'approve' : 'deny',
+      request: signal => approved ? controlApi.approve(current, { signal }) : controlApi.deny(current, { signal }),
+      onError: error => { if (error.status === 409 || error.status === 503) refresh?.(); },
       successMessage: `Backend acknowledged the ${approved ? 'approval' : 'denial'} decision. Waiting for the gate to update.`,
     });
   }
@@ -39,6 +42,7 @@ export default function ControlProvider({ live, children }) {
   }
   function confirmStop() {
     if (!stopAvailable || !dialog.open || dialog.key !== run.key) return;
+    stopRequested.current = true;
     setDialog(previous => ({ ...previous, open: false }));
     stop.submit({
       key: run.key, action: 'stop',

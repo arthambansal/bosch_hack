@@ -36,7 +36,7 @@ export default function useControlRequest(scopeKey) {
       const uncertain = error?.uncertain === true || error?.name === 'AbortError';
       // A verified idempotent STOP may be manually retried after confirmation;
       // ambiguous approval writes must remain blocked. Never retry automatically.
-      settled.current = { key, blocked: uncertain && !idempotent };
+      settled.current = { key, blocked: !idempotent && (uncertain || error?.status === 409) };
       if (mounted.current) setResult({ key, action, status: 'error', message: error?.message || 'The request could not be acknowledged. Inspect live state before retrying.' });
       if (mounted.current) onError?.(error);
     } finally {

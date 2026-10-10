@@ -1,10 +1,10 @@
 import { obj, num } from '../data.js';
 
-export const APPROVAL_BLOCKER = 'Approval submission is unavailable: the orchestrator has no shared gate claim/closure synchronization.';
+export const APPROVAL_BLOCKER = 'The approval lock is busy. No decision was accepted. You may retry manually while this gate remains pending.';
 
 export function pendingGateContext(snapshot, now = Date.now() / 1000) {
   const gate = obj(snapshot.approval_request);
-  if (snapshot.run_status !== 'running' || snapshot.agent_active !== 'human'
+  if (obj(snapshot.gate_sync).version !== 1 || snapshot.run_status !== 'running' || snapshot.agent_active !== 'human'
     || typeof gate.gate_id !== 'string' || !gate.gate_id
     || !num(gate.created_at) || !num(gate.expires_at) || gate.created_at > now
     || gate.expires_at <= now || gate.expires_at <= gate.created_at
@@ -12,10 +12,29 @@ export function pendingGateContext(snapshot, now = Date.now() / 1000) {
   return { key: gate.gate_id, gate_id: gate.gate_id, expires_at: gate.expires_at, request: gate };
 }
 
-// STOP is implemented and tested in dashboard/server.py. Approval remains
-// deliberately unconfigured: gate.py provides no cross-process synchronization.
+export function liveApprovalContext(live, stopRequested = false, now = Date.now()) {
+  if (stopRequested || live.status !== 'connected' || !num(live.received)
+    || now < live.received || now - live.received >= 2000) return null;
+  return pendingGateContext(live.state, now / 1000);
+}
+
 export const CONTROL_CONTRACTS = Object.freeze({
-  approval: null,
+  approval: Object.freeze({
+    verified: true,
+    getContext: pendingGateContext,
+    buildRequest(context, decision) {
+      if (typeof decision !== 'boolean' || !context.gate_id || context.key !== context.gate_id
+        || !num(context.expires_at) || context.expires_at <= Date.now() / 1000) {
+        throw new ControlRequestError('This approval gate is unavailable or expired.');
+      }
+      return { body: JSON.stringify({ gate_id: context.gate_id, approved: decision }), headers: { 'Content-Type': 'application/json' } };
+    },
+    async verifyAcknowledgement(response, context) {
+      if (response.status !== 200 || !response.headers.get('content-type')?.includes('application/json')) return false;
+      const body = await response.json();
+      return body.ok === true && body.gate_id === context.gate_id;
+    },
+  }),
   stop: Object.freeze({
     verified: true,
     getContext(snapshot) {
@@ -53,8 +72,7 @@ function configured(adapter) {
 }
 
 function usableContext(context) {
-  // `key` is an adapter-owned frontend identity used for request scoping. Its
-  // extraction from an authoritative run/gate is deliberately unimplemented.
+  // Scope requests to the authoritative gate token or run identity.
   return context && typeof context.key === 'string' && context.key.length > 0;
 }
 
@@ -79,7 +97,6 @@ export function createControlApi(contracts = CONTROL_CONTRACTS) {
       throw new ControlRequestError('Emergency STOP requires explicit confirmation.');
     }
     // Only a verified adapter may serialize the payload or interpret a reply.
-    // The approved boolean file format does not establish an HTTP body format.
     const request = adapter.buildRequest(context, decision);
     if (!request || typeof request !== 'object') {
       throw new ControlRequestError('The verified integration did not produce a request.');
@@ -97,9 +114,9 @@ export function createControlApi(contracts = CONTROL_CONTRACTS) {
     if (!response.ok) {
       let code = null;
       try { code = (await response.json()).error; } catch { /* never display a raw HTML error */ }
-      const uncertain = code !== 'gate_sync_unavailable'
+      const uncertain = !(kind === 'approval' && response.status === 503 && code === 'gate_sync_unavailable')
         && (response.status === 408 || (response.status >= 500 && response.status !== 501));
-      const gateErrors = { no_pending: 'No approval gate is pending.', stale: 'This approval gate is stale.', expired: 'This approval gate has expired.', gate_sync_unavailable: APPROVAL_BLOCKER };
+      const gateErrors = { no_pending: 'No approval gate is pending.', stale: 'This approval gate is stale.', expired: 'This approval gate has expired.', already_decided: 'This gate already has a decision.', gate_sync_unavailable: APPROVAL_BLOCKER };
       const message = gateErrors[code] || (uncertain ? `The backend returned HTTP ${response.status}; receipt is unconfirmed. Inspect live state before retrying.`
         : response.status === 501 ? 'The backend does not implement this action.'
         : response.status === 409 ? 'The backend rejected a stale, closed, or conflicting request.'
@@ -112,7 +129,7 @@ export function createControlApi(contracts = CONTROL_CONTRACTS) {
     }
     let acknowledged = false;
     try {
-      acknowledged = await adapter.verifyAcknowledgement(response);
+      acknowledged = await adapter.verifyAcknowledgement(response, context);
     } catch {
       // A 2xx reply or unreadable body does not establish acceptance.
     }
