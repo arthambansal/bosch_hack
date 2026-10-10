@@ -87,3 +87,33 @@ viewport; keyboard-focus timeline markers to read exact event text, use Escape t
 and check horizontal overflow is contained in the timeline. In fixture mode, verify the
 persistent label, disabled approval/STOP controls, and absence of `/state` or mutation
 requests in browser Network. An invalid fixture must show an error, not live data.
+
+
+### Phase 4 API bridge
+
+Development and preview proxy `/mystery` and `/runs` to the existing local Python
+server. `src/api/day2Api.js` supplies request-only Mystery and History adapters;
+no Mystery or History UI is enabled in this phase. Mystery requires a fresh live
+idle snapshot; fixture, stale, disconnected and stopped contexts fail closed.
+There are no automatic retries. An acknowledgement means queued, not executed.
+
+`GET /runs` exposes `started_at` as an ISO local calendar string parsed from the
+runtime's `auto_YYYYMMDD_HHMMSS` directory name. The contract specifies no timestamp
+type or timezone and the runtime records neither timezone nor an independent start
+epoch. These strings preserve the recorded local time; they must not be treated as
+UTC. Listing excludes invalid dates, other names, and linked directories. Report
+and event reads reject links and traversal; Markdown remains untrusted plain text.
+History GETs always validate loopback/Host and reject foreign Origin when supplied;
+same-origin browser GETs may omit Origin. Mutation Origin requirements are unchanged.
+
+Mystery writers serialize across dashboard processes using the directory
+`runs/dashboard_mystery.lock`, publish a flushed temporary file with `os.replace`,
+and never replace an already present request. Lock acquisition is bounded to five
+seconds (`503 mystery_busy`); a crashed writer's abandoned lock requires operator
+inspection and is never automatically removed. The backend Mystery consumer does
+not participate in this lock and supplies no request/trial token. Thus dashboard
+writers are coordinated, but consuming a request while the live state still says
+idle remains a lifecycle race requiring a future orchestrator contract. STOP
+presence and published stopping/stopped states reject new Mystery requests.
+Filesystem validation assumes local operators do not maliciously replace directories
+between path validation and file access; this bridge is not a hostile-filesystem service.
