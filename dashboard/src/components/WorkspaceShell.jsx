@@ -1,29 +1,34 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { VIEWS, nextTabIndex } from '../viewModel.js';
 import { Icon } from './ui.jsx';
-import { StopControl } from './SafetyPanel.jsx';
+import LiveStatusStrip from './LiveStatusStrip.jsx';
 
-const navigation = [
-  ['overview', 'Overview', 'overview'], ['workflow', 'Agent workflow', 'workflow'],
-  ['topology', 'Application map', 'topology'], ['telemetry', 'Telemetry', 'telemetry'],
-  ['activity', 'Activity', 'activity'], ['controls', 'Safety & approvals', 'shield'],
-];
-
-export default function WorkspaceShell({ status, received, children }) {
-  const [section, setSection] = useState('overview');
-  const connected = status === 'connected';
-  return <div className="app-shell">
+export default function WorkspaceShell({ live, view, onView, approvalOpen, onApproval, approvalContent, children }) {
+  const tabs = useRef([]);
+  const root = useRef(null), header = useRef(null);
+  useEffect(() => {
+    const measure = () => root.current?.style.setProperty('--global-header-height', `${header.current.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header.current);
+    return () => observer.disconnect();
+  }, []);
+  const connected = live.status === 'connected';
+  function navigateKey(event, index) {
+    const next = nextTabIndex(index, event.key);
+    if (next !== null) { event.preventDefault(); tabs.current[next]?.focus(); }
+  }
+  return <div ref={root} className="app-shell control-room-v2">
     <a href="#main-content" className="skip-link">Skip to dashboard</a>
-    <aside className="sidebar">
-      <a className="brand" href="#overview" aria-label="ChaosPilot overview"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 23L15 5l3 11 8-7-9 18-3-11Z" fill="currentColor" /></svg></span><span>ChaosPilot<span className="brand-subtitle">RESILIENCE WORKSPACE</span></span></a>
-      <div className="workspace-switch"><span className="workspace-avatar">CP</span><div><strong>Control room</strong><small>Local workspace</small></div></div>
-      <span className="nav-label">WORKSPACE</span>
-      <nav aria-label="Dashboard sections">{navigation.map(([id, label, icon]) => <a key={id} href={`#${id}`} aria-label={label} className={section === id ? 'selected' : ''} aria-current={section === id ? 'location' : undefined} onClick={() => setSection(id)}><Icon name={icon} size={18} /><span>{label}</span>{section === id && <span className="nav-marker" />}</a>)}</nav>
-      <div className="sidebar-bottom"><div className="sandbox-note"><Icon name="shield" size={21} /><strong>Controlled by design.</strong><p>Experiments, evidence, and recovery in one workspace.</p></div><div className="sidebar-foot"><span className="local-dot" />Local backend</div></div>
-    </aside>
-    <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb">Workspace<Icon name="chevron" size={14} /><strong>Control room</strong></div><div className="topbar-actions"><span className={`connection-status ${connected ? 'connected' : status === 'loading' ? '' : 'error'}`} role="status" aria-live="polite"><i />{connected ? 'Backend connected' : status === 'loading' ? 'Connecting' : status === 'malformed' ? 'Invalid state' : 'Disconnected'}</span><span className="read-only-label">LOCAL CONTROLS</span><StopControl compact /></div></header>
-      <main id="main-content">{children}</main>
-      <footer className="workspace-footer"><span>ChaosPilot <i /> Evidence before assumptions.</span><span>{received ? `Snapshot received ${new Date(received).toLocaleTimeString([], { hour12: false })}` : 'Waiting for a state snapshot'} · 500 ms polling</span></footer>
+    <div ref={header} className="global-header">
+      <header className="product-header"><button className="brand" onClick={() => onView('overview')} aria-label="ChaosPilot overview"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 23L15 5l3 11 8-7-9 18-3-11Z" fill="currentColor" /></svg></span><span>ChaosPilot<span className="brand-subtitle">CONTROL ROOM / LOCAL WORKSPACE</span></span></button>
+        <nav className="top-navigation" aria-label="Control Room views"><div role="tablist" aria-label="Dashboard views">{VIEWS.map((item, index) => <button key={item.id} ref={element => { tabs.current[index] = element; }} role="tab" id={`tab-${item.id}`} aria-controls={`view-${item.id}`} aria-selected={view === item.id} tabIndex={view === item.id ? 0 : -1} onKeyDown={event => navigateKey(event, index)} onClick={() => onView(item.id)}><Icon name={item.icon} size={17} />{item.label}</button>)}</div></nav>
+        <span className={`connection-status ${connected ? 'connected' : live.status === 'loading' ? '' : 'error'}`} role="status"><i />{connected ? 'Backend connected' : live.status === 'loading' ? 'Connecting' : live.status === 'malformed' ? 'Invalid state' : 'Disconnected'}</span>
+      </header>
+      <LiveStatusStrip live={live} approvalOpen={approvalOpen} onApproval={onApproval} />
     </div>
+    <aside id="global-approval" className="global-approval" hidden={!approvalOpen} aria-label="Global approval controls"><div className="drawer-heading"><strong>Human oversight · current live gate</strong><button type="button" className="text-button" onClick={onApproval}>Close approval panel</button></div>{approvalContent}</aside>
+    <main id="main-content" tabIndex="-1">{children}</main>
+    <footer className="workspace-footer"><span>ChaosPilot <i /> Evidence before assumptions.</span><span>{live.received ? `Snapshot received ${new Date(live.received).toLocaleTimeString([], { hour12: false })}` : 'Waiting for a state snapshot'} · 500 ms polling</span></footer>
   </div>;
 }
