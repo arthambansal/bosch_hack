@@ -1,0 +1,53 @@
+[
+  {
+    "id": "E3",
+    "failure_mode": "kill db",
+    "effect": "cascade: result, worker crashed and never restarted on their own",
+    "S": 9,
+    "O": 7,
+    "D": 10,
+    "rpn": 630,
+    "action_priority": "High",
+    "detection_note": "health pages look normal again; the crashed service is only visible by inspecting containers",
+    "evidence": {
+      "error_rate": 0.75,
+      "recovery_s": null,
+      "lost_votes": 0,
+      "killswitch": true
+    }
+  },
+  {
+    "id": "E2",
+    "failure_mode": "pause redis",
+    "effect": "cascade: worker crashed and never restarted on their own",
+    "S": 9,
+    "O": 3,
+    "D": 10,
+    "rpn": 270,
+    "action_priority": "High",
+    "detection_note": "health pages look normal again; the crashed service is only visible by inspecting containers",
+    "evidence": {
+      "error_rate": 0.667,
+      "recovery_s": 0.4,
+      "lost_votes": 0,
+      "killswitch": true
+    }
+  },
+  {
+    "id": "E1",
+    "failure_mode": "partition redis",
+    "effect": "major outage (75% of requests failed)",
+    "S": 7,
+    "O": 5,
+    "D": 2,
+    "rpn": 70,
+    "action_priority": "Medium",
+    "detection_note": "first user-facing error after 0.5s",
+    "evidence": {
+      "error_rate": 0.75,
+      "recovery_s": 0.4,
+      "lost_votes": 0,
+      "killswitch": true
+    }
+  }
+]

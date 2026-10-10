@@ -1,0 +1,294 @@
+{
+  "compare": [
+    {
+      "id": "E3",
+      "failure_mode": "kill db",
+      "rpn_before": 630,
+      "rpn_after": 700,
+      "S": [
+        9,
+        10
+      ],
+      "D": [
+        10,
+        10
+      ],
+      "reduction_pct": -11
+    },
+    {
+      "id": "E2",
+      "failure_mode": "pause redis",
+      "rpn_before": 270,
+      "rpn_after": 30,
+      "S": [
+        9,
+        5
+      ],
+      "D": [
+        10,
+        2
+      ],
+      "reduction_pct": 89
+    }
+  ],
+  "results": [
+    {
+      "id": "E2",
+      "name": "Pause Redis to test worker resilience",
+      "steps": [
+        {
+          "type": "pause",
+          "target": "redis",
+          "delay_s": 0
+        }
+      ],
+      "reason": "The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.",
+      "hypothesis": "If the system has proper retry/back\u2011off, a temporary pause of Redis will not crash the worker and vote_write will recover after the pause ends.",
+      "predicted_probes": [
+        "vote_write"
+      ],
+      "status": "aborted",
+      "abort_reason": "KILL SWITCH: vote_write error rate 50% >= 50%",
+      "fault_window_s": 4.2,
+      "probes": {
+        "vote_write": {
+          "n": 3,
+          "ok": 2,
+          "error_rate": 0.333,
+          "p50_ms": 1167.3,
+          "p95_ms": 2504.6,
+          "time_to_first_error_s": 0.5
+        },
+        "result_page": {
+          "n": 9,
+          "ok": 9,
+          "error_rate": 0.0,
+          "p50_ms": 7.4,
+          "p95_ms": 8.1,
+          "time_to_first_error_s": null
+        }
+      },
+      "recovery_s": 0.5,
+      "guard_log": [
+        {
+          "t": 3.1,
+          "reasons": [
+            "vote_write error rate 50% >= 50%"
+          ]
+        },
+        {
+          "t": 3.6,
+          "reasons": [
+            "vote_write error rate 50% >= 50%"
+          ]
+        },
+        {
+          "t": 4.2,
+          "reasons": [
+            "vote_write error rate 50% >= 50%"
+          ]
+        }
+      ],
+      "delivery": {
+        "sent": 24,
+        "delivered": 25,
+        "lost": 0
+      },
+      "faults_injected": [
+        "PAUSE -> redis"
+      ],
+      "prediction": null,
+      "prediction_check": null,
+      "stuck_services": [],
+      "stuck_details": {},
+      "observation": {
+        "experiment": "E2",
+        "t_start": 1791632028.9559119,
+        "t_end": 1791632033.115656,
+        "mttd_s": 3.1,
+        "mttr_s": 0.5,
+        "probe_error_rate": {
+          "vote_write": 0.333,
+          "result_page": 0.0
+        },
+        "delivery": {
+          "accepted": 24,
+          "delivered": 25,
+          "canary_lag_s": null
+        },
+        "queue_depth": {
+          "start": 1,
+          "end": 0
+        },
+        "events": [],
+        "new_log_templates": {
+          "vote": [
+            "<IP> - - [<NUM>/Oct/<NUM>:<NUM>:<NUM>:<NUM> +<NUM>] \"POST / HTTP/<NUM>\" <NUM> <NUM> \"-\" \"python-requests/<NUM>.<NUM>\"",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for a",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for b",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for a",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for b"
+          ],
+          "worker": [
+            "Processing vote for 'a' by '7f268467ca1086b'",
+            "Processing vote for 'b' by '88dd3506b9a9882'"
+          ]
+        },
+        "anomalies": [
+          {
+            "type": "probe_error_rate",
+            "service": "vote_write",
+            "value": 0.333,
+            "reason": "Probe error rate exceeds 5%"
+          }
+        ],
+        "kill_switch": "KILL SWITCH: vote_write error rate 50% >= 50%",
+        "stuck_services": []
+      }
+    },
+    {
+      "id": "E3",
+      "name": "Kill DB to test result page and worker resilience",
+      "steps": [
+        {
+          "type": "kill",
+          "target": "db",
+          "delay_s": 0
+        }
+      ],
+      "reason": "Previous kill of redis caused worker crash due to missing restart policy. Cartographer hypothesizes that a DB crash will break result_page and may also crash the worker. Testing kill:db will verify this and assess whether the system recovers without automatic restarts.",
+      "hypothesis": "If the database goes down, result_page requests will fail and the worker will stop processing queued votes, but votes remain in Redis (no data loss). The system will not self\u2011recover because services lack restart policies.",
+      "predicted_probes": [
+        "result_page"
+      ],
+      "status": "completed",
+      "abort_reason": null,
+      "fault_window_s": 20.4,
+      "probes": {
+        "vote_write": {
+          "n": 41,
+          "ok": 41,
+          "error_rate": 0.0,
+          "p50_ms": 8.2,
+          "p95_ms": 9.8,
+          "time_to_first_error_s": null
+        },
+        "result_page": {
+          "n": 41,
+          "ok": 41,
+          "error_rate": 0.0,
+          "p50_ms": 6.2,
+          "p95_ms": 7.8,
+          "time_to_first_error_s": null
+        }
+      },
+      "recovery_s": 0.3,
+      "guard_log": [],
+      "delivery": {
+        "sent": 62,
+        "delivered": 61,
+        "lost": 1
+      },
+      "faults_injected": [
+        "KILL -> db"
+      ],
+      "prediction": null,
+      "prediction_check": null,
+      "stuck_services": [],
+      "stuck_details": {},
+      "observation": {
+        "experiment": "E3",
+        "t_start": 1791632054.413934,
+        "t_end": 1791632074.7891042,
+        "mttd_s": null,
+        "mttr_s": 0.3,
+        "probe_error_rate": {
+          "vote_write": 0.0,
+          "result_page": 0.0
+        },
+        "delivery": {
+          "accepted": 62,
+          "delivered": 61,
+          "canary_lag_s": null
+        },
+        "queue_depth": {
+          "start": 1,
+          "end": 1
+        },
+        "events": [
+          {
+            "t": 1791632054,
+            "service": "db",
+            "event": "die",
+            "exit_code": 137
+          },
+          {
+            "t": 1791632054,
+            "service": "result",
+            "event": "die",
+            "exit_code": 1
+          },
+          {
+            "t": 1791632054,
+            "service": "worker",
+            "event": "die",
+            "exit_code": 1
+          },
+          {
+            "t": 1791632054,
+            "service": "result",
+            "event": "start",
+            "exit_code": 0
+          },
+          {
+            "t": 1791632054,
+            "service": "worker",
+            "event": "start",
+            "exit_code": 0
+          }
+        ],
+        "new_log_templates": {
+          "vote": [
+            "<IP> - - [<NUM>/Oct/<NUM>:<NUM>:<NUM>:<NUM> +<NUM>] \"POST / HTTP/<NUM>\" <NUM> <NUM> \"-\" \"python-requests/<NUM>.<NUM>\"",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for a",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for b",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for a",
+            "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for b"
+          ],
+          "result": [
+            "App running on port <NUM>",
+            "Emitted 'error' event on Client instance at:",
+            "Error: Connection terminated unexpectedly",
+            "Node.js v18.<NUM>",
+            "Sat, <NUM> Oct <NUM> <NUM>:<NUM>:<NUM> GMT body-parser deprecated undefined extended: provide extended option at server.js:<NUM>:<NUM>",
+            "Waiting for db",
+            "[... lines matching original stack trace ...]",
+            "^",
+            "at Client._handleErrorEvent (/node_modules/pg/lib/client.js:<NUM>:<NUM>)",
+            "at Connection.<anonymous> (/node_modules/pg/lib/client.js:<NUM>:<NUM>)",
+            "at Connection.emit (node:events:<NUM>:<NUM>)",
+            "at Object.onceWrapper (node:events:<NUM>:<NUM>)",
+            "at Socket.<anonymous> (/node_modules/pg/lib/connection.js:<NUM>:<NUM>)",
+            "at Socket.emit (node:events:<NUM>:<NUM>)",
+            "at TCP.<anonymous> (node:net:<NUM>:<NUM>)",
+            "node:events:<NUM>",
+            "throw er; // Unhandled 'error' event"
+          ],
+          "worker": [
+            "Processing vote for 'a' by 'a60e8afe9a7ad08'",
+            "System.InvalidOperationException: Connection is not open",
+            "Waiting for db",
+            "at Npgsql.NpgsqlCommand.ExecuteNonQuery()",
+            "at Npgsql.NpgsqlCommand.ExecuteNonQuery(Boolean async, CancellationToken cancellationToken)",
+            "at Npgsql.NpgsqlCommand.ExecuteReaderAsync(CommandBehavior behavior, Boolean async, CancellationToken cancellationToken)",
+            "at Worker.Program.Main(String[] args) in /source/Program.cs:line <NUM>",
+            "at Worker.Program.UpdateVote(NpgsqlConnection connection, String voterId, String vote) in /source/Program.cs:line <NUM>"
+          ]
+        },
+        "anomalies": [],
+        "kill_switch": null,
+        "stuck_services": []
+      }
+    }
+  ]
+}

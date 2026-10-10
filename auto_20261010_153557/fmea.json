@@ -1,0 +1,53 @@
+[
+  {
+    "id": "E3",
+    "failure_mode": "kill db",
+    "effect": "1 accepted votes silently lost (data integrity violated)",
+    "S": 10,
+    "O": 7,
+    "D": 10,
+    "rpn": 700,
+    "action_priority": "High",
+    "detection_note": "no live monitor sees lost data (only found by our post-run delivery audit)",
+    "evidence": {
+      "error_rate": 0.75,
+      "recovery_s": null,
+      "lost_votes": 1,
+      "killswitch": true
+    }
+  },
+  {
+    "id": "E1",
+    "failure_mode": "kill redis",
+    "effect": "cascade: worker crashed and never restarted on their own",
+    "S": 9,
+    "O": 7,
+    "D": 10,
+    "rpn": 630,
+    "action_priority": "High",
+    "detection_note": "health pages look normal again; the crashed service is only visible by inspecting containers",
+    "evidence": {
+      "error_rate": 1.0,
+      "recovery_s": 0.4,
+      "lost_votes": 0,
+      "killswitch": true
+    }
+  },
+  {
+    "id": "E2",
+    "failure_mode": "pause redis",
+    "effect": "partial outage (33% of requests failed)",
+    "S": 5,
+    "O": 3,
+    "D": 2,
+    "rpn": 30,
+    "action_priority": "Low",
+    "detection_note": "first user-facing error after 0.5s",
+    "evidence": {
+      "error_rate": 0.333,
+      "recovery_s": 0.4,
+      "lost_votes": 0,
+      "killswitch": true
+    }
+  }
+]

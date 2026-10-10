@@ -1,0 +1,300 @@
+[
+  {
+    "id": "E1",
+    "name": "Kill Redis to test recovery",
+    "steps": [
+      {
+        "type": "kill",
+        "target": "redis",
+        "delay_s": 0
+      }
+    ],
+    "reason": "Test hypothesis that a crash of the single Redis instance (no restart policy, no healthcheck) will not be auto\u2011recovered and will cause vote_write failures, confirming it as a single point of failure.",
+    "hypothesis": "A resilient system should automatically recover from a Redis crash, keeping vote_write functional and preserving queued data.",
+    "predicted_probes": [
+      "vote_write"
+    ],
+    "status": "aborted",
+    "abort_reason": "KILL SWITCH: vote_write error rate 100% >= 50%",
+    "fault_window_s": 1.6,
+    "probes": {
+      "vote_write": {
+        "n": 4,
+        "ok": 0,
+        "error_rate": 1.0,
+        "p50_ms": 11.1,
+        "p95_ms": 11.4,
+        "time_to_first_error_s": 0.1
+      },
+      "result_page": {
+        "n": 4,
+        "ok": 4,
+        "error_rate": 0.0,
+        "p50_ms": 7.8,
+        "p95_ms": 8.0,
+        "time_to_first_error_s": null
+      }
+    },
+    "recovery_s": 0.4,
+    "guard_log": [
+      {
+        "t": 0.6,
+        "reasons": [
+          "vote_write error rate 100% >= 50%"
+        ]
+      },
+      {
+        "t": 1.1,
+        "reasons": [
+          "vote_write error rate 100% >= 50%"
+        ]
+      },
+      {
+        "t": 1.6,
+        "reasons": [
+          "vote_write error rate 100% >= 50%"
+        ]
+      }
+    ],
+    "delivery": {
+      "sent": 29,
+      "delivered": 29,
+      "lost": 0
+    },
+    "faults_injected": [
+      "KILL -> redis"
+    ],
+    "prediction": {
+      "probes_affected": [
+        "vote_write"
+      ],
+      "data_loss": true,
+      "recovers": false
+    },
+    "prediction_check": {
+      "probes": true,
+      "recovers": true,
+      "data_loss": false
+    },
+    "stuck_services": [
+      "worker"
+    ],
+    "stuck_details": {
+      "worker": {
+        "exit_code": "1",
+        "last_logs": [
+          "at System.Net.Dns.<>c__DisplayClass39_0`1.<RunAsync>b__0(Task <p0>, Object <p1>)",
+          "   at System.Threading.Tasks.ContinuationResultTaskFromTask`1.InnerInvoke()",
+          "   at System.Threading.ExecutionContext.RunFromThreadPoolDispatchLoop(Thread threadPoolThread, ExecutionContext executionContext, ContextCallback callback, Object state)",
+          "--- End of stack trace from previous location ---",
+          "   at System.Threading.ExecutionContext.RunFromThreadPoolDispatchLoop(Thread threadPoolThread, ExecutionContext executionContext, ContextCallback callback, Object state)",
+          "   at System.Threading.Tasks.Task.ExecuteWithThreadLocal(Task& currentTaskSlot, Thread threadPoolThread)",
+          "   --- End of inner exception stack trace ---",
+          "   at System.Threading.Tasks.Task.ThrowIfExceptional(Boolean includeTaskCanceledExceptions)",
+          "   at System.Threading.Tasks.Task`1.GetResultCore(Boolean waitCompletionNotification)",
+          "   at Worker.Program.GetIp(String hostname) in /source/Program.cs:line 127",
+          "   at Worker.Program.OpenRedisConnection(String hostname) in /source/Program.cs:line 108",
+          "   at Worker.Program.Main(String[] args) in /source/Program.cs:line 37"
+        ]
+      }
+    }
+  },
+  {
+    "id": "E2",
+    "name": "Pause Redis to test worker resilience",
+    "steps": [
+      {
+        "type": "pause",
+        "target": "redis",
+        "delay_s": 0
+      }
+    ],
+    "reason": "The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.",
+    "hypothesis": "If the system has proper retry/back\u2011off, a temporary pause of Redis will not crash the worker and vote_write will recover after the pause ends.",
+    "predicted_probes": [
+      "vote_write"
+    ],
+    "status": "aborted",
+    "abort_reason": "KILL SWITCH: vote_write error rate 50% >= 50%",
+    "fault_window_s": 4.1,
+    "probes": {
+      "vote_write": {
+        "n": 3,
+        "ok": 2,
+        "error_rate": 0.333,
+        "p50_ms": 1126.4,
+        "p95_ms": 2504.2,
+        "time_to_first_error_s": 0.5
+      },
+      "result_page": {
+        "n": 9,
+        "ok": 9,
+        "error_rate": 0.0,
+        "p50_ms": 8.0,
+        "p95_ms": 8.4,
+        "time_to_first_error_s": null
+      }
+    },
+    "recovery_s": 0.4,
+    "guard_log": [
+      {
+        "t": 3.1,
+        "reasons": [
+          "vote_write error rate 50% >= 50%"
+        ]
+      },
+      {
+        "t": 3.6,
+        "reasons": [
+          "vote_write error rate 50% >= 50%"
+        ]
+      },
+      {
+        "t": 4.1,
+        "reasons": [
+          "vote_write error rate 50% >= 50%"
+        ]
+      }
+    ],
+    "delivery": {
+      "sent": 24,
+      "delivered": 25,
+      "lost": 0
+    },
+    "faults_injected": [
+      "PAUSE -> redis"
+    ],
+    "prediction": {
+      "probes_affected": [
+        "vote_write"
+      ],
+      "data_loss": false,
+      "recovers": false
+    },
+    "prediction_check": {
+      "probes": false,
+      "recovers": false,
+      "data_loss": true
+    },
+    "stuck_services": [],
+    "stuck_details": {}
+  },
+  {
+    "id": "E3",
+    "name": "Kill DB to test result_page resilience",
+    "steps": [
+      {
+        "type": "kill",
+        "target": "db",
+        "delay_s": 0
+      }
+    ],
+    "reason": "Previous kill of Redis caused a worker crash and 100% vote_write errors, showing lack of automatic recovery. We now test the analogous single\u2011point failure for the database, which should affect result_page and likely not recover automatically due to missing restart policy.",
+    "hypothesis": "If the system is resilient, killing the sole DB instance will cause result_page failures but the DB will not be auto\u2011restarted, leading to sustained outage without data loss.",
+    "predicted_probes": [
+      "result_page"
+    ],
+    "status": "aborted",
+    "abort_reason": "KILL SWITCH: result_page error rate 75% >= 50%",
+    "fault_window_s": 1.7,
+    "probes": {
+      "vote_write": {
+        "n": 4,
+        "ok": 4,
+        "error_rate": 0.0,
+        "p50_ms": 7.9,
+        "p95_ms": 10.0,
+        "time_to_first_error_s": null
+      },
+      "result_page": {
+        "n": 4,
+        "ok": 1,
+        "error_rate": 0.75,
+        "p50_ms": 3.6,
+        "p95_ms": 10.4,
+        "time_to_first_error_s": 0.5
+      }
+    },
+    "recovery_s": null,
+    "guard_log": [
+      {
+        "t": 0.6,
+        "reasons": [
+          "result_page error rate 50% >= 50%"
+        ]
+      },
+      {
+        "t": 1.1,
+        "reasons": [
+          "result_page error rate 67% >= 50%"
+        ]
+      },
+      {
+        "t": 1.7,
+        "reasons": [
+          "result_page error rate 75% >= 50%"
+        ]
+      }
+    ],
+    "delivery": {
+      "sent": 110,
+      "delivered": 109,
+      "lost": 1
+    },
+    "faults_injected": [
+      "KILL -> db"
+    ],
+    "prediction": {
+      "probes_affected": [
+        "result_page"
+      ],
+      "data_loss": false,
+      "recovers": false
+    },
+    "prediction_check": {
+      "probes": true,
+      "recovers": true,
+      "data_loss": false
+    },
+    "stuck_services": [
+      "result",
+      "worker"
+    ],
+    "stuck_details": {
+      "result": {
+        "exit_code": "1",
+        "last_logs": [
+          "where: undefined,",
+          "  schema: undefined,",
+          "  table: undefined,",
+          "  column: undefined,",
+          "  dataType: undefined,",
+          "  constraint: undefined,",
+          "  file: 'be-secure.c',",
+          "  line: '207',",
+          "  routine: 'secure_read'",
+          "}",
+          "",
+          "Node.js v18.20.4"
+        ]
+      },
+      "worker": {
+        "exit_code": "1",
+        "last_logs": [
+          "Processing vote for 'b' by 'b8ba79042f54426'",
+          "Processing vote for 'b' by 'd9213e0e445edba'",
+          "Processing vote for 'b' by '2d46117026bad48'",
+          "Processing vote for 'a' by '4283ae18625c04a'",
+          "Processing vote for 'b' by 'ba990176043bb22'",
+          "Processing vote for 'a' by 'a92eceb28a20e1a'",
+          "System.InvalidOperationException: Connection is not open",
+          "   at Npgsql.NpgsqlCommand.ExecuteReaderAsync(CommandBehavior behavior, Boolean async, CancellationToken cancellationToken)",
+          "   at Npgsql.NpgsqlCommand.ExecuteNonQuery(Boolean async, CancellationToken cancellationToken)",
+          "   at Npgsql.NpgsqlCommand.ExecuteNonQuery()",
+          "   at Worker.Program.UpdateVote(NpgsqlConnection connection, String voterId, String vote) in /source/Program.cs:line 152",
+          "   at Worker.Program.Main(String[] args) in /source/Program.cs:line 53"
+        ]
+      }
+    }
+  }
+]

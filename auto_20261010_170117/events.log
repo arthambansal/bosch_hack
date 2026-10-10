@@ -1,0 +1,170 @@
+INFO     [17:01:17] AUTOPILOT start. Goal: find the weakest points
+AI       [17:01:17] [Cartographer] started: Find the weaknesses most worth testing, each backed by evidence from a tool.
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+WARN     [17:01:17] [Cartographer] asked for unknown tool 'exec' with {"cmd": ["bash", "-lc", "python - <<'PY'\nprint('placeholder')\nPY"]}
+AI       [17:01:17] [Cartographer] thinks: Check container status and restart policies
+AI       [17:01:17] [Cartographer] calls list_containers({})
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+AI       [17:01:17] [Cartographer] calls service_config({"service": "redis"})
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+WARN     [17:01:17] [Cartographer] asked for unknown tool 'exec' with {"cmd": ["bash", "-lc", "python - <<'PY'\nprint('placeholder')\nPY"]}
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+AI       [17:01:17] [Cartographer] calls service_config({"service": "db"})
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+AI       [17:01:17] [Cartographer] calls service_config({"service": "worker"})
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+WARN     [17:01:17] [Cartographer] asked for unknown tool 'exec' with {"cmd": ["bash", "-lc", "ls -R"]}
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+WARN     [17:01:17] [Cartographer] asked for unknown tool 'exec' with {"cmd": ["list_containers"]}
+AI       [17:01:17] [Cartographer] thinks: Check container status and restart policies
+WARN     [17:01:17] [Cartographer] repeated list_containers({}), skipped
+WARN     [17:01:17] [Cartographer] the AI kept missing; gathering basic evidence with read-only tools
+AI       [17:01:17] [Cartographer] (code) calls queue_depth({})
+AI       [17:01:17] [Cartographer] (code) calls db_row_count({})
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+WARN     [17:01:17] [Cartographer] repeated service_config({"service": "redis"}), skipped
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+WARN     [17:01:17] [Cartographer] repeated service_config({"service": "db"}), skipped
+AI       [17:01:17] [Cartographer] thinks: (requested a tool call)
+AI       [17:01:17] [Cartographer] calls service_config({"service": "vote"})
+AI       [17:01:17] [Cartographer] conclusion: Conclude single points of failure and risks based on restart policies, healthchecks, and volumes
+WARN     [17:01:17] [Cartographer] no valid source hypotheses available; using rule fallback
+AI       [17:01:17] [Cartographer] single points of failure: ['redis', 'db']
+INFO     [17:01:17] [graph] cartographer done
+AI       [17:01:17] AGENT step 1 (cache): Redis network partition (DNS failure)
+AI       [17:01:17]   because: Cartographer hypothesizes that a DNS resolution failure when opening a Redis connection causes the worker to exit, stopping vote processing. Testing a partition on redis directly probes this failure mode before testing simple crashes.
+AI       [17:01:17]   predicts: {"probes_affected": ["vote_write"], "data_loss": false, "recovers": false}
+INFO     [17:01:17] [graph] experimenter done
+OK       [17:01:17] [Governor] approved E1 Redis network partition (DNS failure)
+INFO     [17:01:17] [graph] governor done
+INFO     [17:01:17] [graph] approval done
+INFO     [17:01:17] === E1: Redis network partition (DNS failure) ===
+AI       [17:01:17] Why: Cartographer hypothesizes that a DNS resolution failure when opening a Redis connection causes the worker to exit, stopping vote processing. Testing a partition on redis directly probes this failure mode before testing simple crashes.
+INJECT   [17:01:27] INJECT PARTITION -> redis OK
+GUARD    [17:01:28] guard 1/3: vote_write error rate 50% >= 50%
+GUARD    [17:01:28] guard 2/3: vote_write error rate 67% >= 50%
+GUARD    [17:01:29] guard 3/3: vote_write error rate 75% >= 50%
+GUARD    [17:01:29] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: vote_write error rate 75% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [17:01:29] RESTORE PARTITION -> redis OK
+OK       [17:01:31] Recovered in 0.4s
+OK       [17:01:40] No data loss: 22 accepted, 22 delivered
+AI       [17:01:40] PREDICTION WRONG {'probes': True, 'recovers': False, 'data_loss': True}
+INFO     [17:01:40] [Observer] E1 summary saved for diagnosis
+INFO     [17:01:40] [graph] execute done
+INFO     [17:01:40] [graph] evaluate done
+AI       [17:01:40] [Diagnostician] started: Explain the root cause of what happened in experiment E1.
+AI       [17:01:40] [Diagnostician] thinks: Check logs of vote_write service to see errors due to Redis DNS failure
+AI       [17:01:40] [Diagnostician] calls container_logs({"service": "vote_write", "lines": 20})
+AI       [17:01:40] [Diagnostician] thinks: (requested a tool call)
+AI       [17:01:40] [Diagnostician] calls container_logs({"service": "vote", "lines": 20})
+AI       [17:01:40] [Diagnostician] thinks: (requested a tool call)
+AI       [17:01:40] [Diagnostician] calls container_logs({"service": "redis", "lines": 20})
+AI       [17:01:40] [Diagnostician] thinks: (requested a tool call)
+AI       [17:01:40] [Diagnostician] calls container_logs({"service": "vote", "lines": 50})
+AI       [17:01:40] [Diagnostician] thinks: (requested a tool call)
+AI       [17:01:40] [Diagnostician] calls container_logs({"service": "vote", "lines": 100})
+AI       [17:01:40] [Diagnostician] conclusion: (requested a tool call)
+AI       [17:01:40] [Diagnostician] E1 root cause: KILL SWITCH: vote_write error rate 75% >= 50%
+INFO     [17:01:40] [graph] diagnostician done
+AI       [17:01:40] AGENT step 2 (cache): Pause Redis to test worker resilience
+AI       [17:01:40]   because: The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.
+AI       [17:01:40]   predicts: {"probes_affected": ["vote_write"], "data_loss": false, "recovers": false}
+INFO     [17:01:40] [graph] experimenter done
+OK       [17:01:40] [Governor] approved E2 Pause Redis to test worker resilience
+INFO     [17:01:40] [graph] governor done
+INFO     [17:01:40] [graph] approval done
+INFO     [17:01:40] === E2: Pause Redis to test worker resilience ===
+AI       [17:01:40] Why: The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.
+INJECT   [17:01:50] INJECT PAUSE -> redis OK
+GUARD    [17:01:56] guard 1/3: vote_write error rate 100% >= 50%
+GUARD    [17:01:56] guard 2/3: vote_write error rate 100% >= 50%
+GUARD    [17:01:57] guard 3/3: vote_write error rate 100% >= 50%
+GUARD    [17:01:57] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: vote_write error rate 100% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [17:01:57] RESTORE PAUSE -> redis OK
+OK       [17:01:59] Recovered in 0.4s
+GUARD    [17:02:03] CASCADE FAILURE: ['worker'] crashed and did NOT come back on their own (probes look healthy, but the pipeline is silently broken)
+OK       [17:02:12] No data loss: 32 accepted, 32 delivered
+AI       [17:02:12] PREDICTION CORRECT {'probes': True, 'recovers': True, 'data_loss': True}
+INFO     [17:02:12] [Observer] E2 summary saved for diagnosis
+INFO     [17:02:12] [graph] execute done
+INFO     [17:02:12] [graph] evaluate done
+AI       [17:02:12] [Diagnostician] started: Explain the root cause of what happened in experiment E2.
+AI       [17:02:12] [Diagnostician] thinks: Check logs of vote_write service to see errors due to Redis DNS failure
+AI       [17:02:12] [Diagnostician] calls container_logs({"service": "vote_write", "lines": 20})
+AI       [17:02:12] [Diagnostician] thinks: (requested a tool call)
+AI       [17:02:12] [Diagnostician] calls container_logs({"service": "vote", "lines": 20})
+AI       [17:02:12] [Diagnostician] thinks: (requested a tool call)
+AI       [17:02:12] [Diagnostician] calls container_logs({"service": "redis", "lines": 20})
+AI       [17:02:12] [Diagnostician] thinks: (requested a tool call)
+AI       [17:02:12] [Diagnostician] calls container_logs({"service": "vote", "lines": 50})
+AI       [17:02:12] [Diagnostician] thinks: (requested a tool call)
+AI       [17:02:12] [Diagnostician] calls container_logs({"service": "vote", "lines": 100})
+AI       [17:02:12] [Diagnostician] conclusion: (requested a tool call)
+AI       [17:02:12] [Diagnostician] E2 root cause: worker crashed during the fault and has no restart policy, so it stayed down
+INFO     [17:02:12] [graph] diagnostician done
+AI       [17:02:12] AGENT step 3 (cache): Kill DB to test result page and worker resilience
+AI       [17:02:12]   because: Previous kill of redis caused worker crash due to missing restart policy. Cartographer hypothesizes that a DB crash will break result_page and may also crash the worker. Testing kill:db will verify this and assess whether the system recovers without automatic restarts.
+AI       [17:02:12]   predicts: {"probes_affected": ["result_page"], "data_loss": false, "recovers": false}
+INFO     [17:02:12] [graph] experimenter done
+OK       [17:02:12] [Governor] approved E3 Kill DB to test result page and worker resilience
+INFO     [17:02:12] [graph] governor done
+INFO     [17:02:12] [graph] approval done
+INFO     [17:02:12] === E3: Kill DB to test result page and worker resilience ===
+AI       [17:02:12] Why: Previous kill of redis caused worker crash due to missing restart policy. Cartographer hypothesizes that a DB crash will break result_page and may also crash the worker. Testing kill:db will verify this and assess whether the system recovers without automatic restarts.
+INJECT   [17:02:23] INJECT KILL -> db OK
+GUARD    [17:02:23] guard 1/3: result_page error rate 50% >= 50%
+GUARD    [17:02:24] guard 2/3: result_page error rate 67% >= 50%
+GUARD    [17:02:24] guard 3/3: result_page error rate 75% >= 50%
+GUARD    [17:02:24] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: result_page error rate 75% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [17:02:24] RESTORE KILL -> db OK
+WARN     [17:03:04] NOT recovered within timeout
+GUARD    [17:03:08] CASCADE FAILURE: ['result', 'worker'] crashed and did NOT come back on their own (probes look healthy, but the pipeline is silently broken)
+OK       [17:03:22] No data loss: 110 accepted, 110 delivered
+AI       [17:03:22] PREDICTION CORRECT {'probes': True, 'recovers': True, 'data_loss': True}
+INFO     [17:03:22] [Observer] E3 summary saved for diagnosis
+INFO     [17:03:22] [graph] execute done
+INFO     [17:03:22] [graph] evaluate done
+AI       [17:03:22] [Diagnostician] started: Explain the root cause of what happened in experiment E3.
+AI       [17:03:22] [Diagnostician] thinks: Check logs of vote_write service to see errors due to Redis DNS failure
+AI       [17:03:22] [Diagnostician] calls container_logs({"service": "vote_write", "lines": 20})
+AI       [17:03:22] [Diagnostician] thinks: (requested a tool call)
+AI       [17:03:22] [Diagnostician] calls container_logs({"service": "vote", "lines": 20})
+AI       [17:03:22] [Diagnostician] thinks: (requested a tool call)
+AI       [17:03:22] [Diagnostician] calls container_logs({"service": "redis", "lines": 20})
+AI       [17:03:22] [Diagnostician] thinks: (requested a tool call)
+AI       [17:03:22] [Diagnostician] calls container_logs({"service": "vote", "lines": 50})
+AI       [17:03:22] [Diagnostician] thinks: (requested a tool call)
+AI       [17:03:22] [Diagnostician] calls container_logs({"service": "vote", "lines": 100})
+AI       [17:03:22] [Diagnostician] conclusion: (requested a tool call)
+AI       [17:03:22] [Diagnostician] E3 root cause: result, worker crashed during the fault and has no restart policy, so it stayed down
+INFO     [17:03:22] [graph] diagnostician done
+INFO     [17:03:22] [graph] experimenter done
+AI       [17:03:22] [Remediator] (rules) applying restart-policy for ['E3', 'E2']: Crashed containers stayed down until a human restarted them. Add `restart: unless-stopped`.
+INFO     [17:03:38] [graph] remediator done
+INFO     [17:03:38] [Verifier] re-running E2 against the fixed system
+INFO     [17:03:38] === E2: Pause Redis to test worker resilience ===
+AI       [17:03:38] Why: The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.
+INJECT   [17:03:49] INJECT PAUSE -> redis OK
+GUARD    [17:03:52] guard 1/3: vote_write error rate 50% >= 50%
+GUARD    [17:03:52] guard 2/3: vote_write error rate 50% >= 50%
+GUARD    [17:03:53] guard 3/3: vote_write error rate 50% >= 50%
+GUARD    [17:03:53] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: vote_write error rate 50% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [17:03:53] RESTORE PAUSE -> redis OK
+OK       [17:03:54] Recovered in 0.5s
+OK       [17:04:03] No data loss: 24 accepted, 25 delivered
+INFO     [17:04:04] [Observer] E2 summary saved for diagnosis
+INFO     [17:04:04] [Verifier] re-running E3 against the fixed system
+INFO     [17:04:04] === E3: Kill DB to test result page and worker resilience ===
+AI       [17:04:04] Why: Previous kill of redis caused worker crash due to missing restart policy. Cartographer hypothesizes that a DB crash will break result_page and may also crash the worker. Testing kill:db will verify this and assess whether the system recovers without automatic restarts.
+INJECT   [17:04:14] INJECT KILL -> db OK
+RESTORE  [17:04:34] RESTORE KILL -> db OK
+OK       [17:04:36] Recovered in 0.3s
+GUARD    [17:04:45] DATA LOSS: 62 votes accepted, only 61 reached the database (1 lost)
+INFO     [17:04:45] [Observer] E3 summary saved for diagnosis
+WARN     [17:04:45] [Verifier] E3 RPN 630 -> 700 (-11% lower)
+OK       [17:04:45] [Verifier] E2 RPN 270 -> 30 (89% lower)
+INFO     [17:04:45] [graph] verify done
+INFO     [17:04:45] [Remediator] no new catalog fix to try
+INFO     [17:04:45] [graph] remediator done
+OK       [17:04:45] [Reporter] report written: /Users/arthambansal/Downloads/bosch_repo/runs/auto_20261010_170117/report.md (resilience 61/100, grade D)
+INFO     [17:04:45] [graph] reporter done
