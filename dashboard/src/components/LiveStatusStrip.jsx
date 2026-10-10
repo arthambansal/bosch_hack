@@ -17,7 +17,7 @@ export default function LiveStatusStrip({ live, approvalOpen, onApproval }) {
       <div><dt>Guard <InfoTooltip term="guard ticks" /></dt><dd className={status.guard === 'Tripped' ? 'critical-text' : ''}>{status.guard}</dd></div>
     </dl>
     <div className="global-control-actions"><button type="button" className={`approval-access ${pending ? 'pending' : ''}`} aria-expanded={approvalOpen} aria-controls="global-approval" onClick={onApproval}>{pending ? 'Approval request' : 'Approvals'}{pending && <span>{controls?.approvalAvailable ? 'Decision needed' : 'Review status'}</span>}</button><StopControl compact /></div>
-    {!status.fresh && <p className="strip-stale-note">{live.status === 'loading' ? 'Waiting for live state.' : 'Snapshot is stale or disconnected. Current activity is unconfirmed.'}</p>}
+    {!status.fresh && <p className="strip-stale-note">{live.source === 'fixture' ? 'FIXTURE DATA — static snapshot. STOP, approval, and Mystery submissions are disabled.' : live.status === 'loading' ? 'Waiting for live state.' : 'Snapshot is stale or disconnected. Current activity is unconfirmed.'}</p>}
     <div className="global-stop-feedback"><ControlFeedback result={controls?.stopResult} /></div>
     <p id="stop-note" className="sr-only">STOP requests cancellation and cleanup. Acknowledgement does not confirm cleanup completion.</p>
   </div>;

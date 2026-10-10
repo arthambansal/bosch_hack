@@ -22,7 +22,7 @@ export function nextTabIndex(index, key) {
 
 export function statusPresentation(live, now = Date.now()) {
   const state = obj(live.state);
-  const fresh = live.status === 'connected' && num(live.received)
+  const fresh = live.source !== 'fixture' && live.status === 'connected' && num(live.received)
     && now >= live.received && now - live.received < 2000;
   const finished = ['completed', 'stopped'].includes(state.run_status) || ['ran', 'stopped', 'idle', 'healed'].includes(state.phase);
   const node = activeNodeId(state.agent_active);

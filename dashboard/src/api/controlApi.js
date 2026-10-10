@@ -13,7 +13,7 @@ export function pendingGateContext(snapshot, now = Date.now() / 1000) {
 }
 
 export function liveApprovalContext(live, stopRequested = false, now = Date.now()) {
-  if (stopRequested || live.status !== 'connected' || !num(live.received)
+  if (live.source === 'fixture' || stopRequested || live.status !== 'connected' || !num(live.received)
     || now < live.received || now - live.received >= 2000) return null;
   return pendingGateContext(live.state, now / 1000);
 }

@@ -66,3 +66,24 @@ The sticky status strip keeps STOP and approval access available across views. N
 5. Open STOP confirmation and cancel. Do not confirm STOP on a real run merely to test layout. Request acknowledgement and actual stopping/stopped/cleanup progress remain separate.
 6. With no run active, stop the Python server: retained telemetry must be labelled stale, active activity unconfirmed, and mutation controls disabled. Restart it to confirm reconnection.
 7. Check text contrast, visible focus, zoom/reflow, and screen-reader tab/tooltip labels. Automated markup tests do not establish full WCAG compliance or visual correctness.
+
+
+### Phase 3 evidence views and fixture mode
+
+Overview shows the published `truth` object without deriving health from missing fields.
+Experiments contains a chronological, horizontally scrollable evidence timeline. Markers
+require explicit timestamped injection, breach, kill-switch, or probe-recovery events.
+Restore commands do not prove recovery. Events are run-wide, not attributed to a particular
+experiment without an explicit backend association. Unrecognized messages remain in Activity.
+
+Use `?fixture=gray_failure` (also `approval_pending`, `completed_with_fixes`, `idle`, or
+`mystery_revealed`) for labelled static fixture data. Only the allowlisted bundled JSON
+files are loaded; invalid names show an error and never fall back to live data. Fixture
+mode does not mount live polling and disables all mutation controls. Remove the query
+parameter and reload to return to live mode. Original fixture timestamps are preserved.
+
+Manual review: check Overview and Experiments at 1920×1080 and 1440×900, then a narrow
+viewport; keyboard-focus timeline markers to read exact event text, use Escape to dismiss,
+and check horizontal overflow is contained in the timeline. In fixture mode, verify the
+persistent label, disabled approval/STOP controls, and absence of `/state` or mutation
+requests in browser Network. An invalid fixture must show an error, not live data.

@@ -10,7 +10,7 @@ export default function ControlProvider({ live, children }) {
   const { state, status, refresh, received } = live;
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(timer); }, []);
-  const connected = status === 'connected';
+  const connected = live.source !== 'fixture' && status === 'connected';
   const fresh = connected && typeof received === 'number' && now - received < 2000;
   // The adapter, not experiment id/name or an invented state field, must
   // validate and extract an authoritative gate/run identity.

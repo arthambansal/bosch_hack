@@ -49,6 +49,7 @@ const bundle = await build({ stdin: { contents: `
   import WorkspaceShell from './src/components/WorkspaceShell.jsx';
   import { TERMS } from './src/components/InfoTooltip.jsx';
   export { TERMS };
+  export { loadFixture } from './src/fixtures.js';
   export function workspace(live) { return renderToString(React.createElement(ControlProvider, { live }, React.createElement(DashboardWorkspace, { live }))); }
   export function shell(live, view) { return renderToString(React.createElement(ControlProvider, { live }, React.createElement(WorkspaceShell, { live, view, onView: () => {}, onApproval: () => {}, approvalOpen: false }, 'Panel'))); }
 `, resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'esm', packages: 'external' });
@@ -91,4 +92,20 @@ test('new views use supplied records and escape backend content', () => {
   assert.match(html, /Quoted backend cause/);
   assert.match(html, /Backend reason/);
   assert.match(html, /May lose votes/);
+});
+
+test('fixture source stays labelled and STOP stays disabled with live-looking state',()=>{
+ const html=rendering.workspace({source:'fixture',fixtureName:'gray_failure',status:'connected',received:Date.now(),state:{run_status:'running',run_dir:'fixture-run',truth:{status:'diverged',monitoring:'healthy',invariants:[{name:'delivery',ok:false,detail:'three missing'}]},events:[{t:100,kind:'ok',msg:'Recovered in 0.4s'}]}});
+ assert.match(html,/FIXTURE DATA/); assert.match(html,/mutations and live polling disabled/); assert.match(html,/GRAY FAILURE/); assert.match(html,/three missing/); assert.match(html,/Recovered in 0.4s/); assert.doesNotMatch(html,/Backend connected/);
+ assert.match(html,/<button[^>]*disabled=""[^>]*aria-describedby="stop-note"/);
+});
+
+test('every permitted fixture loads locally without fetch and returns isolated snapshots', async t => {
+  t.mock.method(globalThis, 'fetch', () => { throw new Error('Fixture mode must not poll or mutate'); });
+  for (const name of ['approval_pending','completed_with_fixes','gray_failure','idle','mystery_revealed']) {
+    const state = await rendering.loadFixture({name,valid:true});
+    assert.ok(state.truth); state.truth.status = 'modified-test-copy';
+    const fresh = await rendering.loadFixture({name,valid:true});
+    assert.notEqual(fresh.truth.status,'modified-test-copy');
+  }
 });
