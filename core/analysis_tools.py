@@ -94,6 +94,23 @@ def blind_candidates(result, observation, states, configuration, graph):
         detail = (result.get("stuck_details") or {}).get(target) or {}
         add("kill", target, 2, f"{target} stopped after experiment; exit={detail.get('exit_code')}; onset unknown")
     deps = dependency_map(graph)
+    # A consumer depends on its queue/database: simultaneous exits in a dependency
+    # and its consumer are stronger evidence against the dependency, not the consumer.
+    # Use the discovered graph, never a fixed list of service names.
+    death_targets = {e.get("service") for e in deaths}
+    for target in death_targets:
+        pending, seen = list(deps.get(target, ())), set()
+        while pending:
+            dependency = pending.pop()
+            if dependency in seen or dependency == target:
+                continue
+            seen.add(dependency)
+            pending.extend(deps.get(dependency, ()))
+        for dependency in seen & death_targets:
+            dependent_times = [e.get("t") for e in deaths if e.get("service") == target and isinstance(e.get("t"), (int, float))]
+            dependency_times = [e.get("t") for e in deaths if e.get("service") == dependency and isinstance(e.get("t"), (int, float))]
+            if dependent_times and dependency_times and min(dependency_times) <= min(dependent_times):
+                add("kill", dependency, 6, f"Observer: {dependency} stopped no later than dependent {target}; graph supports a cascade hypothesis")
     entries = {p['name']: p.get('entry') for p in configuration.get('probes', [])}
     for name, probe in (result.get("probes") or {}).items():
         entry = entries.get(name)
