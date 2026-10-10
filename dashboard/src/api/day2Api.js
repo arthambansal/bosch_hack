@@ -14,7 +14,7 @@ async function responseFor(path, options = {}) {
   catch { throw new ControlRequestError(options.method === 'POST' ? 'Mystery request outcome is uncertain. Inspect live state; do not blindly retry.' : 'History request failed.', { uncertain: options.method === 'POST' }); }
   if (!response.ok) {
     let code; try { code = (await response.json()).error; } catch { /* no raw server error text */ }
-    throw new ControlRequestError(`Request rejected (HTTP ${response.status}${code ? ': ' + code : ''}).`, { status: response.status, code, uncertain: options.method === 'POST' && response.status >= 500 && code !== 'mystery_busy' });
+    throw new ControlRequestError(`Request rejected (HTTP ${response.status}${code ? ': ' + code : ''}).`, { status: response.status, code, uncertain: options.method === 'POST' && (response.status === 408 || response.status >= 500) && code !== 'mystery_busy' });
   }
   return response;
 }
@@ -33,7 +33,7 @@ export const day2Api = Object.freeze({
     const response = await responseFor('/mystery', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({choice_id}), signal });
     let body;
     try { body = await jsonBody(response); } catch { throw new ControlRequestError('Mystery acknowledgement is uncertain.', { uncertain: true }); }
-    if (response.status !== 202 || body.accepted !== true) throw new ControlRequestError('Mystery acknowledgement is uncertain.', { uncertain: true });
+    if (response.status !== 202 || body?.accepted !== true) throw new ControlRequestError('Mystery acknowledgement is uncertain.', { uncertain: true });
     return { accepted: true }; // Accepted request, never an injected fault or completed trial.
   },
   async runs({signal} = {}) {

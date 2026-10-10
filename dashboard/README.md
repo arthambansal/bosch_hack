@@ -117,3 +117,35 @@ idle remains a lifecycle race requiring a future orchestrator contract. STOP
 presence and published stopping/stopped states reject new Mystery requests.
 Filesystem validation assumes local operators do not maliciously replace directories
 between path validation and file access; this bridge is not a hostile-filesystem service.
+
+
+### Phase 5 P1 views
+
+Experiments adds Mystery Mode, ranked plans, human impact, and prediction checks.
+Diagnostics adds measured failure memory and fix summaries; Recovery shows full
+contracted fix RPN comparisons and read-only diffs. Overview is unchanged.
+Missing data is `Not available`; backend counters and selection order are not
+recomputed. Prediction check booleans mean agreement with the prediction, not
+measured recovery/data-loss booleans. Memory similarity is distinct from guess
+confidence. Code suggestions remain proposed and never offer an apply action.
+
+Mystery requires a fresh live running/idle snapshot with an identified run/trial
+and a nonempty allowed menu. Confirmation is bound to those published values and
+revalidated at submission; its client duplicate scope is not a backend token.
+Pending approval/control actions, fixture mode, stale/disconnected data, and STOP
+block submission. Opening/cancelling confirmation sends nothing. An acknowledged
+request or uncertain/409 outcome blocks another request for that trial; no requests
+retry automatically. A known rejection such as 400/503 requires a new explicit
+confirmation and revalidation before any manual attempt. A 202 is only an accepted
+request; injection and completion are shown solely through backend state. Guess
+is shown only after diagnosis/reveal; answer and correctness only after reveal.
+The existing consumer lifecycle race documented above remains a backend limitation.
+
+Manual review (not covered by SSR/hook-driver tests): use keyboard navigation at
+1920x1080, 1440x900, and narrow widths. Inspect `?fixture=completed_with_fixes` in
+Diagnostics/Recovery and `?fixture=mystery_revealed` in Experiments; verify disabled
+controls, read-only diff expansion, exact counters, and contained table scrolling.
+Use a controlled live idle Mystery session to review confirmation without submitting
+an experiment: open the dialog, cancel, and verify no POST. Check Escape, focus
+restoration, and reduced motion in a browser. Tests mock all mutation requests and
+do not verify live fault injection or native dialog focus behavior.

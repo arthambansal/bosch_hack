@@ -76,7 +76,7 @@ test('workspace keeps six panels mounted with unique IDs and no fabricated findi
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length);
   assert.match(html, /Not available/);
-  assert.match(html, /run-history endpoints are not implemented/);
+  assert.match(html, /History browsing is not enabled yet/);
   assert.match(html, /not verified Docker measurements/);
   assert.match(html, /Hypothesis · not an observed result/);
   assert.equal((html.match(/id="approval-title"/g) || []).length, 1);
@@ -108,4 +108,21 @@ test('every permitted fixture loads locally without fetch and returns isolated s
     const fresh = await rendering.loadFixture({name,valid:true});
     assert.notEqual(fresh.truth.status,'modified-test-copy');
   }
+});
+
+test('P1 fixture panels use published counters, read-only fixes, and safe reveal boundaries',async()=>{
+ const state=await rendering.loadFixture({name:'completed_with_fixes',valid:true});
+ const html=rendering.workspace({state,source:'fixture',fixtureName:'completed_with_fixes',status:'fixture',received:null});
+ for(const text of ['Failure memory','92.0%','88.5 s','rolled_back','270','30','Read-only proposed diff']) assert.ok(html.includes(text),text);
+ assert.match(html,/Similarity/);assert.match(html,/Backend right counter/);assert.match(html,/Backend total counter/);assert.match(html,/42%/);assert.match(html,/Break it yourself/);assert.match(html,/<button[^>]*disabled=""[^>]*>Break it yourself/);
+ assert.doesNotMatch(html,/<button[^>]*>Apply patch/);
+ const secret={state:'diagnosed',trial:4,answer:{fault:'HIDDEN_ANSWER',target:'HIDDEN_TARGET'},correct:{top1:true},guess:{fault:'pause',target:'db',root_cause:'Published guess'}};
+ const hidden=rendering.workspace({state:{mystery:secret},status:'disconnected',received:null});assert.doesNotMatch(hidden,/HIDDEN_ANSWER|HIDDEN_TARGET/);assert.match(hidden,/Published guess/);
+ const revealed=rendering.workspace({state:{mystery:{...secret,state:'revealed'}},status:'disconnected',received:null});assert.match(revealed,/HIDDEN_ANSWER/);
+});
+test('fresh idle Mystery exposes selectable menu but pending approval disables submission',()=>{
+ const now=Date.now();const state={run_dir:'test-run',run_status:'running',mystery:{state:'idle',trial:1,menu:[{id:'M-kill-redis',fault:'kill',target:'redis',label:'Published Redis fault'}]}};
+ const html=rendering.workspace({state,status:'connected',received:now});assert.match(html,/<select id="mystery-choice">/);assert.match(html,/Published Redis fault/);
+ const blocked=rendering.workspace({state:{...state,approval_request:{gate_id:'gate'}},status:'connected',received:now});assert.match(blocked,/<select id="mystery-choice" disabled=""/);
+ const fixture=rendering.workspace({state,status:'connected',received:now,source:'fixture'});assert.match(fixture,/<select id="mystery-choice" disabled=""/);
 });

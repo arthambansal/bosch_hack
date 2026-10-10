@@ -37,3 +37,9 @@ test('History refuses unsafe names before fetching and rejects absent or malform
  t.mock.method(globalThis,'fetch',async()=>json({lines:[1]}));await assert.rejects(day2Api.events('auto_20261010_120000'));
  t.mock.method(globalThis,'fetch',async()=>json({not:'a list'}));await assert.rejects(day2Api.runs());
 });
+
+test('null Mystery acknowledgement and request timeout remain uncertain; 400 stays rejected',async t=>{
+ t.mock.method(globalThis,'fetch',async()=>json(null,202));await assert.rejects(day2Api.requestMystery('random',live()),error=>error.uncertain);
+ t.mock.method(globalThis,'fetch',async()=>json({error:'unknown_choice'},400));await assert.rejects(day2Api.requestMystery('random',live()),error=>error.status===400&&!error.uncertain);
+ t.mock.method(globalThis,'fetch',async()=>json({error:'timeout'},408));await assert.rejects(day2Api.requestMystery('random',live()),error=>error.uncertain);
+});

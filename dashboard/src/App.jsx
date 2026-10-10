@@ -12,6 +12,7 @@ import ActivityFeed from './components/ActivityFeed.jsx';
 import TelemetryPanel from './components/TelemetryPanel.jsx';
 import SafetyPanel from './components/SafetyPanel.jsx';
 import ApprovalPanel from './components/ApprovalPanel.jsx';
+import { MysteryPanel, FixesPanel, MemoryPanel, PlanPanel, PredictionsPanel, ImpactPanel } from './components/P1Panels.jsx';
 import { Icon } from './components/ui.jsx';
 import ControlProvider from './components/ControlProvider.jsx';
 import { VIEWS } from './viewModel.js';
@@ -28,9 +29,9 @@ export function DashboardWorkspace({ live }) {
   const panels = {
     overview: <><TruthPanel truth={state.truth} /><RunOverview state={state} connected={connected} loading={status === 'loading'} /><div className="overview-grid"><TelemetryPanel state={state} connected={connected} /><SafetyPanel state={state} connected={connected} /></div><ActivityFeed events={state.events} /></>,
     agents: <><ViewHeading title="Agents">Understand the reasoning, the safeguards, and the evidence each step publishes.</ViewHeading><AgentWorkflow state={state} connected={connected} /><div className="agents-grid"><AgentGuide state={state} /><DependencyMap state={state} connected={connected} /></div></>,
-    experiments: <><ViewHeading title="Experiments">Intent, fault steps, reported outcomes, and observed signals.</ViewHeading><div className="observability-grid"><ExperimentDetails state={state} /><TelemetryPanel state={state} connected={connected} id="experiment-telemetry" /></div><ExperimentTimeline events={state.events} /></>,
-    diagnostics: <><ViewHeading title="Diagnostics">Reported causes and measured risk, grounded in published evidence.</ViewHeading><DiagnosticsDetails state={state} /></>,
-    recovery: <><ViewHeading title="Recovery">Follow backend cleanup and measured risk comparisons.</ViewHeading><div className="recovery-grid"><RecoveryDetails state={state} /><SafetyPanel state={state} connected={connected} id="recovery-controls" /></div></>,
+    experiments: <><ViewHeading title="Experiments">Intent, fault steps, reported outcomes, and observed signals.</ViewHeading><MysteryPanel live={live} /><div className="p1-grid"><PlanPanel plan={state.plan_ranking} /><ImpactPanel impact={state.impact} /></div><PredictionsPanel predictions={state.predictions} /><div className="observability-grid"><ExperimentDetails state={state} /><TelemetryPanel state={state} connected={connected} id="experiment-telemetry" /></div><ExperimentTimeline events={state.events} /></>,
+    diagnostics: <><ViewHeading title="Diagnostics">Reported causes and measured risk, grounded in published evidence.</ViewHeading><MemoryPanel memory={state.memory} /><DiagnosticsDetails state={state} /><FixesPanel fixes={state.fixes} id="diagnostic-fixes-title" compact /></>,
+    recovery: <><ViewHeading title="Recovery">Follow backend cleanup and measured risk comparisons.</ViewHeading><div className="recovery-grid"><RecoveryDetails state={state} /><SafetyPanel state={state} connected={connected} id="recovery-controls" /></div><FixesPanel fixes={state.fixes} /></>,
     history: <><ViewHeading title="History">A place for previous runs. Live controls remain attached to the current run.</ViewHeading><HistoryPlaceholder /></>,
   };
   return <TooltipScope.Provider value={view}><WorkspaceShell live={live} view={view} onView={setView} approvalOpen={approvalOpen} onApproval={() => setApprovalOpen(previous => !previous)} approvalContent={<ApprovalPanel request={state.approval_request} phase={state.phase} connected={connected} />}>

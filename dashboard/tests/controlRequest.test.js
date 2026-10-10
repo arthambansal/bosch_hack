@@ -51,3 +51,11 @@ test('503 does not retry automatically but permits another deliberate submit', a
   await controls.submit({ ...args, key: 'old-gate' });
   assert.equal(calls, 2);
 });
+
+test('Mystery duplicate, uncertain, and 409 requests remain blocked without retries',async()=>{
+ for(const outcome of [null,{uncertain:true},{status:409}]) {
+  const controls=coordinator();let calls=0;
+  const args={key:'gate',action:'mystery',request:async()=>{calls++;if(outcome)throw outcome;},successMessage:'Request accepted; injection unconfirmed'};
+  await controls.submit(args);await controls.submit(args);assert.equal(calls,1);
+ }
+});

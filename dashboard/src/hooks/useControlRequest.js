@@ -26,7 +26,7 @@ export default function useControlRequest(scopeKey) {
     const controller = new AbortController();
     const pending = { key, controller };
     inFlight.current = pending;
-    setResult({ key, action, status: 'loading', message: action === 'stop' ? 'Sending STOP request…' : 'Sending approval decision…' });
+    setResult({ key, action, status: 'loading', message: action === 'stop' ? 'Sending STOP request…' : action === 'mystery' ? 'Sending Mystery request…' : 'Sending approval decision…' });
     const deadline = setTimeout(() => controller.abort(), 10000);
     try {
       await request(controller.signal);
