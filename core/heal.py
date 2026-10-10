@@ -302,3 +302,10 @@ return override=null. Do not claim a fix is proven before verification.
     }
     LIVE.event("ai", f"[Remediator] validated AI override using {source}")
     return fix, data.get("code_patch")
+
+
+# ---------------------------------------------------------------- Day 2 interface (Pratham) — DAY2_CONTRACT.md 4.4, 5
+def fix_entries(fixes):
+    """Turn applied catalog fixes into live_state.fixes entries (shape 4.4). STUB: minimal but valid."""
+    return [{"id": f.get("id"), "title": f.get("id"), "kind": "compose", "for": list(f.get("rows") or []),
+             "why": f.get("why", ""), "diff": None, "status": "applied", "rpn": []} for f in (fixes or [])]

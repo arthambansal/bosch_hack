@@ -1,0 +1,6 @@
+Failed to find real location of C:\Users\Admin\miniconda3\python.exe
+PASS export only confirmed failures, requires quotes, preserves originals, valid list shape
+PASS replay checks measured invariants and always restores/stops, including exceptions
+PASS sandbox/Governor limits, unknown invariants, STOP and denied approval block injection
+PASS missing/malformed inputs return safe defaults
+ALL CHECKS PASSED

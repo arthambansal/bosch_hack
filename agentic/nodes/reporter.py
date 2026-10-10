@@ -8,6 +8,8 @@ told to use ONLY numbers present in the state; keep this deterministic version a
 import os
 
 from core.common import LIVE
+from core.regression import export_scenario, list_scenarios
+from core.report_extras import executive_summary, timing_markdown, fault_tree_markdown, write_html, day2_sections
 
 from ..runtime import run_dir
 
@@ -33,9 +35,15 @@ def reporter_node(state):
         by = {c["id"]: c["rpn_after"] for c in ver["compare"]}
         after_score = resilience_score([{**r, "rpn": by.get(r["id"], r["rpn"])} for r in rows])
     L = [f"# ChaosPilot findings report", "",
-         f"**Resilience score: {score}/100 (grade {grade})**" + (f" -> after fixes: {after_score[0]}/100 ({after_score[1]})" if after_score else ""),
+         f"**Resilience score: {score}/100 (grade {grade})**" + (f" -> verification trials: {after_score[0]}/100 ({after_score[1]})" if after_score else ""),
          "", f"Experiments run: {len(state.get('results', []))}. Stop reason: {state.get('done_reason', 'n/a')}.", ""]
     tm = state.get("threat_model") or {}
+    try:
+        summary = executive_summary(state, score, grade)
+    except Exception as exc:
+        LIVE.event("warn", f"[Reporter] AI summary unavailable: {type(exc).__name__}")
+        summary = f"{len(state.get('results', []))} experiment records; resilience score {score}/100 (grade {grade})."
+    L += ["## Executive summary", "", summary, ""]
     if tm:
         L += ["## Recon (before any attack)", f"Single points of failure: {', '.join(tm.get('single_points_of_failure') or []) or 'none found'}", ""]
         L += [f"- Hypothesis: {h}" for h in tm.get("hypotheses_to_test", [])] + [""]
@@ -48,17 +56,31 @@ def reporter_node(state):
         for k, v in inv.items():
             L += [f"### {k}: {v.get('root_cause')}", f"Confidence: {v.get('confidence')} (by {v.get('by')})"]
             L += [f"- evidence: {e}" for e in v.get("evidence", [])] + [f"- suggested fix: {v.get('suggested_fix')}", ""]
+    for result in state.get("results", []):
+        export_scenario(result, inv.get(result.get("id"), {}), run_dir())
+    LIVE.set(regression=list_scenarios())
+    report_state = dict(state)
+    # Verifier removes rolled-back entries from graph state; its current-run live entries retain their RPNs.
+    if LIVE.state.get("run_dir") == run_dir():
+        entries = LIVE.state.get("fixes") or []
+        if entries:
+            report_state["fixes"] = entries
+    L += [""] + day2_sections(report_state)
     if state.get("fixes"):
-        L += ["## Fixes applied in the sandbox (RemediatorAgent)"] + [f"- **{f['id']}** for {', '.join(f['rows'])}: {f['why']}" for f in state["fixes"]]
+        L += ["## Fixes applied in the sandbox (RemediatorAgent)"] + [f"- **{f['id']}** for {', '.join(f.get('rows', f.get('for', [])))}: {f['why']}" for f in state["fixes"]]
     if ver.get("compare"):
         L += ["", "## Before vs after (Verifier)", "", "| ID | Failure mode | RPN before | RPN after | Reduction |", "|---|---|---|---|---|"]
         L += [f"| {c['id']} | {c['failure_mode']} | {c['rpn_before']} | {c['rpn_after']} | {c['reduction_pct']}% |" for c in ver["compare"]]
     if state.get("recommendations"):
         L += ["", "## Further recommendations (manual, not auto-applied)"] + [f"- {r.get('problem')}: {r.get('recommendation')}" for r in state["recommendations"]]
+    L += [""] + timing_markdown(state.get("results", []))
+    L += [""] + fault_tree_markdown(state.get("results", []))
+    L += ["", "## Heatmap", "", "The service Ã— fault heatmap is in report.html. Combined experiments are labelled; untested cells remain unknown."]
     path = os.path.join(run_dir(), "report.md")
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
+    write_html(os.path.join(run_dir(), "report.html"), "\n".join(L), state.get("results", []), (state.get("graph") or {}).get("services", {}))
     LIVE.event("ok", f"[Reporter] report written: {path} (resilience {score}/100, grade {grade})")
     LIVE.set(score={"overall": score, "grade": grade, "after": after_score})
     return {"report": {"path_md": path, "resilience_score": score, "grade": grade,
-                       "after": after_score[0] if after_score else None}}
+                       "after": after_score[0] if after_score else None, "summary": summary}}

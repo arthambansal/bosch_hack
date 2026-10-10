@@ -7,7 +7,8 @@ LangGraph gives us: explicit routing (the AI decides INSIDE nodes, the graph dec
 interrupt() for human approval, a checkpointer (pause/resume), streaming of every node for the dashboard,
 and an auto-generated diagram of the graph (python chaospilot.py graph).
 """
-import select
+import json
+import os
 import sys
 import time
 
@@ -15,9 +16,10 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from core.common import BASELINE_FILE, DEPS_FILE, LIVE, RUNS_DIR, load_json
+from core.common import BASELINE_FILE, DEPS_FILE, LIVE, RUNS_DIR, STOP_FILE, load_json
 
 from . import runtime
+from .gate import ask_human, read_answer
 from .nodes.execute import evaluate_node, execute_node, needs_investigation, verify_node
 from .nodes.diagnostician import diagnostician_node
 from .nodes.cartographer import cartographer_node
@@ -30,6 +32,24 @@ from .state import ChaosState
 MAX_REJECTIONS = 3
 
 
+class RunStopped(Exception):
+    """The operator created the STOP file (dashboard STOP button or `touch STOP`): halt the whole autopilot run."""
+
+
+# nodes that may still run after STOP so the report and the last result are written
+STOP_EXEMPT = {"evaluate", "reporter"}
+
+
+def stoppable(name, fn):
+    """Check the STOP file before EVERY node. Outermost wrapper, so guarded()'s fallbacks cannot swallow the stop."""
+    def wrapper(state):
+        if name not in STOP_EXEMPT and os.path.exists(STOP_FILE):
+            LIVE.set(run_status="stopping", approval_request=None)
+            raise RunStopped(name)
+        return fn(state)
+    return wrapper
+
+
 def guarded(name, fn, fallback):
     """A teammate's node may crash while being upgraded. Never let that kill the run: log it, use a safe fallback."""
     def wrapper(state):
@@ -38,6 +58,38 @@ def guarded(name, fn, fallback):
         except Exception as e:  # noqa: BLE001 - deliberate: the demo must survive
             LIVE.event("warn", f"[{name}] crashed ({type(e).__name__}: {e}); using safe fallback")
             return fallback(state)
+    return wrapper
+
+
+def announced(name, fn):
+    """Discord alerts for root_cause (after the Diagnostician) and report (after the Reporter). Best-effort: it can
+    never change what the node returned or crash the run. Signature: core.notify.notify(kind, title, text, fields=None)."""
+    if name not in ("diagnostician", "reporter"):
+        return fn
+
+    def wrapper(state):
+        before = set((state.get("investigations") or {}).keys())
+        out = fn(state)
+        try:
+            from core.notify import notify
+            if name == "diagnostician":
+                for exp_id, inv in ((out or {}).get("investigations") or {}).items():
+                    if exp_id in before or not isinstance(inv, dict) or not inv.get("root_cause"):
+                        continue
+                    conf = inv.get("confidence")
+                    notify("root_cause", f"Root cause found for {exp_id}", str(inv["root_cause"])[:300],
+                           {"experiment": exp_id, "confidence": f"{conf}" if conf is not None else "n/a",
+                            "found by": str(inv.get("by") or "diagnostician")})
+            else:
+                rep = (out or {}).get("report") or {}
+                if rep:
+                    after = f" -> {rep['after']}/100 after fixes" if rep.get("after") is not None else ""
+                    notify("report", "ChaosPilot report is ready",
+                           f"Resilience score {rep.get('resilience_score')}/100 (grade {rep.get('grade')}){after}.",
+                           {"report": str(rep.get("path_md") or "")})
+        except Exception:  # noqa: BLE001
+            pass
+        return out
     return wrapper
 
 
@@ -65,7 +117,7 @@ def build(checkpointer=None):
                      ("approval", approval_node), ("execute", execute_node), ("evaluate", evaluate_node),
                      ("diagnostician", diagnostician_node), ("remediator", remediator_node),
                      ("verify", verify_node), ("reporter", reporter_node)]:
-        g.add_node(name, guarded(name, fn, FALLBACKS[name]) if name in FALLBACKS else fn)
+        g.add_node(name, stoppable(name, guarded(name, announced(name, fn), FALLBACKS[name]) if name in FALLBACKS else announced(name, fn)))
     g.add_edge(START, "cartographer")
     g.add_edge("cartographer", "experimenter")
     g.add_conditional_edges("experimenter", lambda s: "governor" if s.get("proposal") else "remediator",
@@ -85,26 +137,9 @@ def build(checkpointer=None):
     return g.compile(checkpointer=checkpointer or MemorySaver())
 
 
-def ask_human(req, timeout_s=180):
-    """Terminal y/n, or the dashboard writes runs/approval.json {"answer": "yes"}. No answer = deny (safe default)."""
-    import json
-    import os
-    path = os.path.join(RUNS_DIR, "approval.json")
-    if os.path.exists(path):
-        os.remove(path)
-    print(f"\n>>> HUMAN APPROVAL NEEDED: {req['question']}\n    why: {req.get('reason')}\n    type y or n: ", end="", flush=True)
-    end = time.time() + timeout_s
-    while time.time() < end:
-        if os.path.exists(path):
-            try:
-                return json.load(open(path)).get("answer", "no")
-            except (OSError, ValueError):
-                pass
-        ready, _, _ = select.select([sys.stdin], [], [], 0.5)
-        if ready:
-            return sys.stdin.readline().strip()
-    print("(no answer, denied)")
-    return "no"
+def _read_answer(path):
+    """Legacy file format check kept for the tests: {"approved": bool} or {"answer": "yes"} (see gate.py for the real gate)."""
+    return read_answer(path)
 
 
 def run(goal="", require_approval=False, offline=False, heal=True):
@@ -132,9 +167,19 @@ def run(goal="", require_approval=False, offline=False, heal=True):
             inp = Command(resume=ask_human(pending))
     except KeyboardInterrupt:
         LIVE.event("guard", "Ctrl+C - restoring everything before exit")
+    except RunStopped as e:
+        LIVE.event("guard", f"STOP file detected before node '{e}': autopilot halted, restoring everything")
     finally:
+        LIVE.set(approval_request=None)                  # a pending question never outlives the run (STOP, Ctrl+C, crash)
         runtime.finish()
-    return app.get_state(conf).values
+    values = app.get_state(conf).values
+    if os.path.exists(STOP_FILE) and values.get("results") and not values.get("report"):
+        try:                                             # still give the operator a report of what ran before STOP
+            values = {**values, **reporter_node(values)}
+        except Exception as e:  # noqa: BLE001
+            LIVE.event("warn", f"[Reporter] could not write the partial report: {e}")
+    LIVE.set(report_path=(values.get("report") or {}).get("path_md"))   # dashboard: report is ready (None = no report)
+    return values
 
 
 def mermaid():

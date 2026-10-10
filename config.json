@@ -22,7 +22,7 @@
 
   "delivery_check": {
     "container": "chaos-db",
-    "cmd": ["psql", "-U", "postgres", "-tAc", "SELECT count(*) FROM votes"]
+    "cmd": ["psql", "-U", "postgres", "-tAc", "SELECT count(*) FROM votes WHERE id NOT LIKE 'canary-%'"]
   },
 
   "backlog_check": {

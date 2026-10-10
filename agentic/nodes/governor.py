@@ -53,10 +53,9 @@ def approval_node(state):
     review, p = state["review"], state["proposal"]
     if not (state.get("require_approval") and review.get("needs_human")):
         return {}
-    LIVE.set(agent_active="human", approval_request={"id": p["id"], "name": p["name"], "reason": p.get("reason")})
-    answer = interrupt({"question": f"Approve {p['id']}: {p['name']}?", "reason": p.get("reason"),
-                        "steps": p.get("steps")})
-    LIVE.set(approval_request=None)
+    # the gate token, expiry and live_state.approval_request are created by agentic/gate.py when the question is asked
+    answer = interrupt({"id": p["id"], "name": p["name"], "question": f"Approve {p['id']}: {p['name']}?",
+                        "reason": p.get("reason"), "steps": p.get("steps")})
     if str(answer).strip().lower() in ("y", "yes", "approve", "approved", "true"):
         LIVE.event("ok", f"[Human] approved {p['id']}")
         return {"review": {**review, "human": "approved"}}

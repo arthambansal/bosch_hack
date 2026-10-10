@@ -1,0 +1,19 @@
+[
+  {
+    "id": "E1",
+    "failure_mode": "kill redis",
+    "effect": "major outage (67% of requests failed)",
+    "S": 7,
+    "O": 7,
+    "D": 2,
+    "rpn": 98,
+    "action_priority": "Medium",
+    "detection_note": "first user-facing error after 0.5s",
+    "evidence": {
+      "error_rate": 0.667,
+      "recovery_s": 1.5,
+      "lost_votes": 0,
+      "killswitch": true
+    }
+  }
+]

@@ -29,6 +29,7 @@ class Fault:
         self.container = cfg["services"][target]["container"]
         self.params = {**cfg.get("fault_params", {}).get(ftype, {}), **(params or {})}
         self.spike = None
+        self.hidden = False      # mystery mode: never print which fault this is until the reveal
         self._check_sandbox()
 
     def _check_sandbox(self):
@@ -37,6 +38,8 @@ class Fault:
             raise SafetyError(f"{self.container} is not part of sandbox project '{self.cfg['project']}' - refusing")
 
     def describe(self):
+        if self.hidden:
+            return "[hidden fault]"
         extra = f" {self.params.get('delay_ms')}ms" if self.type == "latency" else ""
         extra = f" x{self.params.get('threads')} threads" if self.type == "spike" else extra
         return f"{self.type.upper()}{extra} -> {self.target}"

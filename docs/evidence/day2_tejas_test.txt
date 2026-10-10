@@ -1,0 +1,17 @@
+Failed to find real location of C:\Users\Admin\miniconda3\python.exe
+Traceback (most recent call last):
+  File "C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\docs\test_tejas.py", line 184, in <module>
+    check_tools()
+    ~~~~~~~~~~~^^
+  File "C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\docs\test_tejas.py", line 26, in check_tools
+    assert code.list_files() == ["a.txt"]
+           ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\core\code_tools.py", line 22, in list_files
+    base = _path(path)
+  File "C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\core\code_tools.py", line 12, in _path
+    root = SOURCE_ROOT.resolve(strict=True)
+  File "C:\Users\Admin\miniconda3\Lib\pathlib\_local.py", line 670, in resolve
+    return self.with_segments(os.path.realpath(self, strict=strict))
+                              ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen ntpath>", line 694, in realpath
+PermissionError: [WinError 5] Access is denied: 'C:\\Users\\Admin\\Documents\\Codex\\2026-10-10\\referenced-chatgpt-conversation-this-is-an-3\\tejas-fresh\\runs\\tmp9m6l7fzf\\app'
