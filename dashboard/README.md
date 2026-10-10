@@ -149,3 +149,71 @@ Use a controlled live idle Mystery session to review confirmation without submit
 an experiment: open the dialog, cancel, and verify no POST. Check Escape, focus
 restoration, and reduced motion in a browser. Tests mock all mutation requests and
 do not verify live fault injection or native dialog focus behavior.
+
+### Phase 6: archived evidence and presentation
+
+History loads the existing read-only `/runs` adapter only while the History view is
+active and outside fixture mode. Server order is retained, and refresh preserves
+selection when the run still exists. Loading, empty, stale retained listings,
+missing artifacts, malformed responses and network errors have separate messages.
+Requests have a ten-second deadline; navigation and run changes abort old reads
+and discard late responses. A manual refresh reloads listing and selected evidence.
+
+The actual server parses `started_at` from the runtime directory name, **not file
+metadata**. The UI labels it as directory-name-derived local calendar time without
+a known timezone. It never converts those strings to UTC or uses modification times.
+
+Recorded Event Replay shows the original `events.log` lines in original order.
+Play/pause, backward/forward steps, reset, event-position slider and reading speed
+operate entirely in the client. Speed is events per reading interval, not simulated
+run time. Only valid leading recorded HH:MM:SS clocks are recognized; date, timezone,
+elapsed duration and backend state are not reconstructed. The selected event has a
+dedicated readout, and a bounded 41-line window keeps large logs from creating huge
+DOM trees. The backend still transfers the full file. Changing run, refreshing or
+leaving History stops playback. No replay callback imports live controls, publishes
+state, invokes a mutation endpoint or sends Discord notifications.
+
+Reports display the actual Markdown source as escaped, selectable preformatted text.
+No HTML renderer or new dependency is added. Copy uses the browser Clipboard API and
+reports failure; download creates a local Markdown Blob. A missing report (404) is
+distinct from an empty file or a failed/malformed read. Reports are never executed.
+
+Recovery displays only published regression scenario id, file, invariant, last status
+and timestamp. `pass`, `fail` and `never_run` describe the last backend replay; neither
+a missing key nor an empty list proves current recovery or absence of regression.
+Partial fields say `Not available`. Epoch timestamps are explicitly displayed in UTC.
+The contract does not publish a pending status or additional regression evidence.
+
+Presentation Mode is an accessible pressed-state button in the global header, with
+an explicit exit label. It enlarges typography and readouts and adapts header spacing.
+All six tabs, the sticky live status strip, STOP and approval access remain available.
+It does not rotate views, use fullscreen, alter permissions, or submit controls.
+
+Validation: from dashboard, `node --test tests/*.test.js` exercises API validation,
+escaped report rendering, bounded replay, real component callbacks/effects under a
+hook driver, request races, fixture isolation and presentation toggle persistence,
+along with all existing frontend tests. From the repository root use
+`python -B -m unittest discover -s dashboard/tests -p 'test_*.py' -v`; tests redirect
+artifacts to temporary directories and do not modify real runs. Build with
+`npm run build`, then run `git diff --check`.
+
+Manual review at **1920×1080** and **1440×900**:
+
+1. Run the current Python dashboard server and Vite; restart an old Python process
+   if `/runs` returns 404. Open History, refresh, change selected runs and inspect
+   server timestamps and report availability. Disconnect the server to check errors
+   and stale retained listing; reconnect and refresh manually.
+2. Exercise replay play/pause, both steps, reset, reading speed and the slider.
+   Change run and navigate away during playback; playback must stop. Inspect a
+   missing/empty log through mocked tests rather than changing real run artifacts.
+3. Inspect original report source, copy and download it. Verify the copied/downloaded
+   text matches `report.md`. Raw HTML and Markdown links stay inert text.
+4. Toggle Presentation Mode on Overview and History. Confirm six tabs, visible focus,
+   STOP and approval access at both sizes; cancel any control dialog without submitting.
+   Check narrow layouts, keyboard activation, tooltip Escape and reduced-motion mode.
+5. Open `?fixture=gray_failure` and `?fixture=completed_with_fixes`; History must label
+   archive access disabled and make no `/runs` requests. Verify Regression in Recovery
+   uses only snapshot fields. Live mutation safeguards must remain disabled in fixtures.
+
+Browser checks are separate from hook/SSR tests: those tests do not establish full
+accessibility compliance, native clipboard/download behavior, or all visual states.
