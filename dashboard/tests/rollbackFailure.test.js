@@ -34,7 +34,27 @@ test('historical and partial fields require exact failure boolean and do not fab
   const html=render([{...fix,worse:{id:'E3',before:0}}]);assert.match(html,/<td>E3<\/td><td>0<\/td><td>Not available<\/td>/);
   assert.match(render(undefined),/Not available/);
 });
-test('failure evidence stays escaped and overrides any contradictory success badge',()=>{
-  const html=render([{...fix,status:'rolled_back',worse:{id:'<script>bad</script>',before:null,after:null}}]);
-  assert.match(html,/Rollback failed/);assert.doesNotMatch(html,/status-rolled_back|<script>/);assert.match(html,/&lt;script&gt;/);
+test('contradictory failure evidence remains visible without being classified as a valid applied failure',()=>{
+  for(const status of ['rolled_back','verified','proposed',undefined]) {
+    const input={...fix,status,worse:{id:'<script>bad</script>',before:null,after:null}},model=fixesPresentation([input])[0];
+    assert.equal(model.rollbackFailed,false);assert.equal(model.rollbackInconsistent,true);
+    const html=render([input]);assert.match(html,/Inconsistent rollback evidence/);assert.match(html,/recovery is not confirmed/);
+    assert.doesNotMatch(html,/status-rolled_back|status-verified|<script>/);assert.match(html,/&lt;script&gt;/);
+  }
+});
+test('untested rows retain their notice without becoming a rollback failure',()=>{
+  const input={...fix,status:'not_improved',rollback_failed:false,worse:null,untested:['E5',null,42,'E6']};
+  const model=fixesPresentation([input])[0];assert.deepEqual(model.untested,['E5','E6']);assert.equal(model.rollbackFailed,false);
+  for(const compact of [false,true]) {
+    const html=render([input],compact).replaceAll('<!-- -->','');assert.match(html,/Not re-tested: E5, E6/);assert.match(html,/not proven either way/);
+    assert.doesNotMatch(html,/Rollback failed|Inconsistent rollback evidence|rollback-failure/);
+  }
+  assert.deepEqual(fixesPresentation([{status:'applied'}])[0].untested,[]);
+  assert.doesNotMatch(render([{status:'applied',untested:'E5'}]),/Not re-tested/);
+});
+test('a genuine rollback failure and separate untested rows can both be displayed',()=>{
+  const input={...fix,untested:['E5']},html=render([input]).replaceAll('<!-- -->','');
+  assert.equal(fixesPresentation([input])[0].rollbackFailed,true);
+  assert.match(html,/Rollback failed/);assert.match(html,/<td>E3<\/td><td>630<\/td><td>700<\/td>/);
+  assert.match(html,/Not re-tested: E5/);assert.doesNotMatch(html,/Inconsistent rollback evidence/);
 });

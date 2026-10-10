@@ -151,7 +151,7 @@ def run(goal="", require_approval=False, offline=False, heal=True):
     state_in = {"goal": goal, "graph": deps, "baseline": base, "offline": offline, "require_approval": require_approval,
                 "skip_heal": not heal, "results": [], "investigations": {}, "fmea": [], "fixes": [],
                 "rejections": 0, "rejected_sigs": [], "fix_attempts": 0}
-    runtime.start(deps)
+    runtime.start(deps, offline=offline)
     LIVE.event("info", f"AUTOPILOT start. Goal: {goal or 'find the weakest points'}")
     try:
         inp = state_in

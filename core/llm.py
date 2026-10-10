@@ -174,7 +174,7 @@ def ask_json(kind, system, user, offline=False, max_tokens=2500, tool_agent=Fals
         # attempt 1: JSON mode. attempt 2: plain. attempt 3: plain plus a reminder. HTTP 429 waits and repeats.
         attempts = ([(False, user), (False, user + NUDGE)] if tool_agent
                     else [(True, user), (False, user), (False, user + NUDGE)])
-        rate_waits, net_waits, i, data = [3, 8, 15, 20], [2, 5, 10], 0, None
+        rate_waits, net_waits, i, data = [3, 8, 15], [2, 5, 10], 0, None     # bounded: agents also have a time budget
         # optional separate model for the tool-using agents (export LLM_AGENT_MODEL=...); the Experimenter keeps LLM_MODEL
         extra = {"model": os.environ["LLM_AGENT_MODEL"]} if tool_agent and os.getenv("LLM_AGENT_MODEL") else {}
         while i < len(attempts) and data is None:
@@ -190,7 +190,7 @@ def ask_json(kind, system, user, offline=False, max_tokens=2500, tool_agent=Fals
                 if code == 429 and rate_waits:
                     wait = rate_waits.pop(0)
                     try:                              # Groq says how long to wait ("retry-after" seconds): use it
-                        wait = min(max(float(e.response.headers.get("retry-after")) + 0.5, wait), 25)
+                        wait = min(max(float(e.response.headers.get("retry-after")) + 0.5, wait), 20)
                     except (TypeError, ValueError, AttributeError):
                         pass
                     LIVE.event("warn", f"AI rate-limited, retrying in {wait}s")

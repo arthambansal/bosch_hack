@@ -71,7 +71,8 @@ def heuristic_plan(cfg, graph, cands, n):
     # Pass 1: one experiment per fault type, spreading across DIFFERENT services where possible.
     for ftype in dict.fromkeys(c["type"] for c in cands):
         options = [c for c in cands if c["type"] == ftype]
-        picked.append(min(options, key=lambda c: (n_on(c["target"]), -c["risk_score"])))
+        # riskiest first, never more than 2 experiments on one service, then prefer a less-tested service
+        picked.append(min(options, key=lambda c: (n_on(c["target"]) >= 2, -c["risk_score"], n_on(c["target"]))))
     # Pass 2: fill remaining slots with the riskiest unpicked candidates (max 2 per service).
     for c in cands:
         if len(picked) >= n - 1:
@@ -82,17 +83,20 @@ def heuristic_plan(cfg, graph, cands, n):
             for i, c in enumerate(picked[:n - 1])]
 
     # Combined failure: crash a consumer, then crash the queue it reads from while work is backed up.
+    # It goes 4th (right after 3 fault types are covered) so a short --max run still includes it.
     by_id = {c["id"]: c for c in cands}
     for qname, q in graph["services"].items():
         consumers = [u for u in q["used_by"] if graph["services"][u]["role"] == "consumer"]
         if q["role"] == "queue" and consumers and f"kill:{consumers[0]}" in by_id:
-            exps.append(_experiment(
-                len(exps) + 1, [by_id[f"kill:{consumers[0]}"], by_id[f"kill:{qname}"]], [0, 8],
+            exps.insert(min(3, len(exps)), _experiment(
+                0, [by_id[f"kill:{consumers[0]}"], by_id[f"kill:{qname}"]], [0, 8],
                 f"{consumers[0]} drains {qname}. With {consumers[0]} down, accepted work piles up inside {qname}; "
                 f"crashing {qname} at that moment tests whether buffered data survives.",
                 "Every vote the user saw accepted should still reach the database.", cfg, graph,
                 name=f"COMBINED: {consumers[0]} down, then {qname} crash"))
             break
+    for i, e in enumerate(exps, 1):
+        e["id"] = f"E{i}"
     return exps
 
 

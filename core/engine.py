@@ -49,6 +49,9 @@ class Guard:
         return self.ticks >= self.s["breach_ticks"], reasons, snap
 
 
+GRAY_MIN_S = 5          # monitoring green + correctness broken for this long = gray failure
+
+
 class Engine:
     def __init__(self, cfg, graph):
         self.cfg, self.graph = cfg, graph
@@ -63,12 +66,20 @@ class Engine:
                 truth = self.oracle.snapshot()
                 extra.setdefault("truth", truth)
                 status = truth.get("status")
-                if status == "diverged" and getattr(self, "_truth_status", None) != "diverged":
+                # Announce a gray failure only when it lasts: a fault that is about to break the probes is not "gray".
+                since = truth.get("diverged_at")
+                lasting = status == "diverged" and since is not None and time.time() - since >= GRAY_MIN_S
+                if lasting and not getattr(self, "_gray_announced", False):
+                    self._gray_announced = True
                     bad = [i["name"] for i in truth.get("invariants", []) if i.get("ok") is False]
-                    LIVE.event("warn", f"[Truth] GRAY FAILURE: probes look healthy but users are affected ({', '.join(bad)})")
+                    LIVE.event("warn", f"[Truth] GRAY FAILURE: health probes have looked fine for {GRAY_MIN_S}s+ but "
+                                       f"{', '.join(bad) or 'an invariant'} is failing (users are affected silently)")
                     from .notify import notify
-                    notify("gray_failure", "Gray failure detected", "Monitoring is green but votes are not being counted.",
+                    notify("gray_failure", "Gray failure detected",
+                           f"Monitoring is green but {', '.join(bad) or 'an invariant'} is failing.",
                            {"failing invariants": ", ".join(bad) or "unknown"})
+                if status != "diverged":
+                    self._gray_announced = False
                 self._truth_status = status
             except Exception:  # noqa: BLE001 - the oracle must never break the run
                 pass
@@ -232,7 +243,9 @@ class Engine:
         if lost:
             LIVE.event("guard", f"DATA LOSS: {sent} votes accepted, only {delivered} reached the database ({lost} lost)")
         elif lost == 0:
-            LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered")
+            extra = (f" ({delivered - sent} vote(s) the client saw as failed/timed out were still stored: "
+                     "the user got an error for a vote that counted)") if delivered > sent else ""
+            LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered{extra}")
 
         window = {}
         for p in cfg["probes"]:
@@ -249,8 +262,15 @@ class Engine:
                      # "recovers" means the whole system, so a crashed service that stayed down counts as NOT recovered
                      "recovers": (recovery_s is not None and not stuck) == bool(pred.get("recovers", True)),
                      "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
-            LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
-                       + f" {check}")
+            parts = {"probes": f"broken probes {sorted(hit) or 'none'} (predicted {sorted(pred.get('probes_affected') or []) or 'none'})",
+                     "recovers": f"system {'recovered' if recovery_s is not None and not stuck else 'did NOT fully recover'}"
+                                 f" (predicted {'recovers' if pred.get('recovers', True) else 'no recovery'})",
+                     "data_loss": f"{'data lost' if lost else 'no data lost' if lost == 0 else 'loss unknown'}"
+                                  f" (predicted {'loss' if pred.get('data_loss') else 'no loss'})"}
+            right = [k for k, v in check.items() if v is True]
+            wrong = [k for k, v in check.items() if v is False]
+            LIVE.event("ai", f"PREDICTION {'CORRECT' if not wrong else f'{len(right)}/{len(right) + len(wrong)} right'}: "
+                       + "; ".join(("OK " if check[k] else "MISS ") + parts[k] for k in check if check[k] is not None))
         observation_end = time.time()
         queue_end = backlog(cfg)
 

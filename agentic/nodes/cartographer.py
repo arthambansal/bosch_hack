@@ -21,6 +21,10 @@ from ..runtime import cfg
 
 THREAT_FILE = os.path.join(ROOT, "threat_model.json")
 
+
+def SOURCE_AVAILABLE():
+    return os.path.isfile(os.path.join(ROOT, "sandbox", "app-src", "worker", "Program.cs"))
+
 RECON_SCHEMA = {"single_points_of_failure": ["service"],
                 "risks": [{"service": "...", "weakness": "...", "evidence": "..."}],
                 "hypotheses_to_test": ["what might break, phrased as a testable claim"]}
@@ -144,7 +148,7 @@ def recon_agent(cfg, graph, offline=False):
         {**RECON_SCHEMA, "hypotheses": [{"id": "H1", "statement": "testable claim", "source": "code",
           "evidence": ["worker/Program.cs:15: public static int Main(string[] args)"],
           "affected": ["service"], "priority": "high", "status": "open"}]},
-        max_steps=10, offline=offline)
+        max_steps=6, offline=offline, time_budget_s=60)
     final, trace = agent.run("Find the weaknesses most worth testing, each backed by evidence from a tool.",
                              {"dependency_map": _compact_graph(graph), "data_flows": graph.get("data_flows"),
                               "source_evidence": source_hypotheses()})
@@ -176,10 +180,22 @@ def cartographer_node(state):
         save_json(os.path.join(ROOT, "runs", "cartographer_hypotheses.json"), hypotheses)
         tm["hypotheses_to_test"] = [h["statement"] + " [FROM SOURCE; HYPOTHESIS] " + "; ".join(h["evidence"]) for h in hypotheses]
         tm["source"] = "agent"
+    elif _valid_recon(final) and (final.get("single_points_of_failure") or final.get("risks")):
+        # The AI's live reconnaissance (config, restart policy, healthchecks) is real evidence even without
+        # source-code citations: keep it instead of throwing it away.
+        tm = {k: final[k] for k in RECON_SCHEMA}
+        tm["single_points_of_failure"] = [s for s in tm["single_points_of_failure"] if s in state["graph"]["services"]]
+        tm["source"] = "agent"
+        if not SOURCE_AVAILABLE():
+            LIVE.event("warn", "[Cartographer] app source not found in sandbox/app-src (clone it for code-cited "
+                               "hypotheses); keeping the AI's configuration-based reconnaissance")
     else:
-        LIVE.event("warn", "[Cartographer] no valid source hypotheses available; using rule fallback")
+        LIVE.event("warn", "[Cartographer] no valid AI reconnaissance; using rule fallback"
+                   + ("" if SOURCE_AVAILABLE() else " (tip: clone the app source into sandbox/app-src)"))
         tm = rule_based(state["graph"])
         tm["source"] = "rules"
-    LIVE.event("ai", f"[Cartographer] single points of failure: {tm.get('single_points_of_failure')}")
+    LIVE.event("ai", f"[Cartographer] ({tm['source']}) single points of failure: {tm.get('single_points_of_failure')}")
+    for r in (tm.get("risks") or [])[:4]:
+        LIVE.event("ai", f"[Cartographer] risk: {r.get('service')}: {str(r.get('weakness'))[:160]}")
     LIVE.set(threat_model=tm)
     return {"threat_model": tm}
