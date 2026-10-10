@@ -36,3 +36,29 @@ Validation of this update: the existing graph mock returned **ALL CHECKS PASSED*
 **Team:** validate live LLM behaviour with a key, pin Docker image/source provenance, test on a second laptop, and complete the official team form. No external coordination message has been sent from this session; this document supplies the reviewable handoff.
 
 The video is a 180-second captioned evidence walkthrough, with no audio and no simulated full-demo claims. It is not evidence that mystery mode, fixes or full blueprint integration ran.
+
+## Day 2 implementation checks — 10 Oct 2026
+
+Commands executed with the existing .venv interpreter and PYTHONPATH=.
+
+| Check | Exit | Final output |
+|---|---|---|
+| tests/test_contract_v5.py | 0 | ALL CHECKS PASSED (35 PASS lines) |
+| tests/test_graph_mock.py | 0 | ALL CHECKS PASSED (22 PASS lines) |
+| tests/test_regression.py | 0 | ALL CHECKS PASSED (4 grouped checks) |
+| tests/test_report_v2.py | 0 | ALL CHECKS PASSED (3 grouped checks) |
+| docs/test_tejas.py (additional existing suite) | 1 | Windows WinError 5 in existing SOURCE_ROOT.resolve(strict=True) |
+
+Complete outputs are in docs/evidence/day2_*_test.txt. The extra source suite is
+blocked by this session's Windows filesystem access, so it must be rerun in the
+user's normal activated terminal before publishing. Source confinement was not
+weakened. The interpreter also prints a Miniconda location warning, despite running
+the four Day 2 suites successfully.
+
+Changed Python files compile, workflow YAML parses and git diff --check passes.
+Ownership audit confirms only Tejas-owned repository files changed.
+
+Live/remote blockers: Docker named-pipe permission denied; GitHub remote query
+failed with getaddrinfo() thread failed to start. No commit or push was made, no
+Actions run was observed, and no live replay occurred. The assignment's two teammate
+runs and final recording/form details remain unavailable. See TEJAS_HANDOFF.md.

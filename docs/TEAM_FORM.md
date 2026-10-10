@@ -1,19 +1,26 @@
-# Team submission form — draft
+# ChaosPilot team submission information
 
 Event: Bosch Hackathon — AI-Driven Chaos Engineering for Cloud-Native Resilience
 
 Project: ChaosPilot
 
-Target: Docker Example Voting App, public Apache-2.0 project.
+Repository: https://github.com/arthambansal/bosch_hack
 
-| Member (first name supplied) | Role |
+Target: Docker Example Voting App (Apache-2.0).
+
+| Member | Role |
 |---|---|
-| Artham | Lead; Experimenter, orchestration, Governor, Executor |
-| Pratham | Remediator, Observer, sandbox fixes |
-| Dipen | Diagnostician, Knowledge Store, signatures, mystery evaluation |
-| Samridhi | Dashboard, briefing, approvals, Discord |
-| Tejas | Cartographer, Reporter, documentation and video |
+| Artham | Lead; orchestration, Experimenter, Governor, mystery and verification |
+| Pratham | Observer, Truth Oracle, Remediator and sandbox fixes |
+| Dipen | Diagnostician, Knowledge Store, signatures and blind evaluation |
+| Samridhi | Control Room dashboard, approvals and Discord notifications |
+| Tejas | Cartographer, Reporter, regression/CI, documentation and video |
 
-Submission repository: https://github.com/arthambansal/bosch_hack.git (branch `tejas`).
+Video: Day 2 public URL not supplied. The existing
+`docs/ChaosPilot_evidence_walkthrough_3min.avi` is the earlier Day 1 captioned
+walkthrough, not the Day 2 golden recording.
 
-Required before submission: team name, full legal names, institution/company, contact email, eligibility/declarations and the organiser's official template. These fields were not provided and are not invented. This draft is not a completed official form.
+Submission status: NOT SUBMITTED. Official form URL, submission procedure, team name,
+full member names, institution and contact details must be supplied by Artham/the
+team. This file contains the known submission information; it is not proof of an
+official submission or a completed final form. No missing identity fields are invented.

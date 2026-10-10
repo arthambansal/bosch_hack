@@ -1,14 +1,23 @@
-# Three-minute captioned evidence walkthrough
+# Day 2 three-minute golden-run recording script
 
-This video presents the actual implementation and one real test. It is an evidence walkthrough, not a recording of an unperformed full demo. No voice track; captions carry the narrative.
+Recording status: pending the golden-run artifacts and recording. The existing AVI
+is a historical Day 1 walkthrough; do not relabel it as Day 2 evidence. This script
+is a recording plan, not a claim that its scenes have occurred.
 
-| Time | Caption / evidence |
+| Time | Screen and narration |
 |---|---|
-| 0:00–0:30 | ChaosPilot: governed chaos in an isolated Voting App sandbox. User → vote → Redis → worker → DB; result reads DB. |
-| 0:30–1:00 | Cartographer source tools are confined and read-only. W1 cites Program.cs GetIp, OpenRedisConnection, Main; Hypothesis is open. |
-| 1:00–1:30 | Real healthy baseline: 31/31 accepted votes delivered; vote p95 41.3 ms; result p95 32.8 ms. |
-| 1:30–2:00 | Human-approved Redis kill; Guard breaches at 3.5, 4.0, 4.5 s; kill switch restores Redis. First HTTP error 0.5 s. |
-| 2:00–2:30 | Result: HTTP recovery 1.5 s after restore; delivery 24/24; no stuck worker. W1 not reproduced. No fix was applied. |
-| 2:30–3:00 | Reporter: RPN 98, single-test score 95/100; fault tree and heatmap. End-to-end MTTD/MTTR unknown. Full AI, fixes and second-laptop validation remain pending. |
+| 0:00–0:25 | Show Voting App and Control Room. "Healthy HTTP checks can miss a broken vote pipeline. ChaosPilot tests whether accepted votes actually reach the database." Show Truth Oracle only with actual canary evidence. |
+| 0:25–0:45 | Show Cartographer source citations and ranked plan. "The AI proposes a hypothesis; deterministic policy and human approval decide whether the experiment can run." |
+| 0:45–1:10 | Show approved injection, probe change and Guard restoration from the golden run. Read the displayed measured fault window and recovery; do not substitute the earlier run's timings. |
+| 1:10–1:35 | Show judge-selected mystery fault, blind evidence-based diagnosis, then reveal. Read the saved accuracy numerator/denominator only if trials are available. |
+| 1:35–2:00 | Show fix verification and per-fix RPN before/after, including any rollback. "Code patches remain suggestions. Runtime fixes have measured verdicts." If no rollback occurred, explain the rule without pretending one did. |
+| 2:00–2:25 | Show failure memory when an actual hit exists; otherwise label it unavailable. Show exported scenario evidence and replay verdict. Show GitHub Actions only after a recorded run; a local mock result is not CI proof. |
+| 2:25–2:50 | Show Report v2 impact, scorecard, postmortem, FMEA ranking and heatmap. Read only values in the report; identify missing measurements and outage proxies. |
+| 2:50–3:00 | "Find, prove, fix, prevent. Our limits are the experiments actually measured, not a claim of universal reliability." End with repository and final video link. |
 
-Raw evidence is in `docs/evidence/e1/`. The wider blueprint's proposed mystery-fault, fix and audit scenes are not presented as completed work.
+Before recording, obtain the golden run's results, investigations, verification,
+events and report; verify the claimed 17/40 loss and 270-to-30 RPN against those files.
+Do not narrate those supplied numbers unless the displayed artifacts support them.
+Record a continuous or clearly captioned ≤180-second video, then check duration,
+legibility, audio, absence of secrets and working public URL. Keep the full raw run
+beside the recording for provenance. Final video creation is blocked on those inputs.
