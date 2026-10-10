@@ -153,6 +153,8 @@ def cmd_mystery(a, cfg):
     """A hidden fault the agents must diagnose from evidence alone. Same kill switch and sandbox rules as every experiment."""
     from agentic import runtime
     from core import mystery
+    if getattr(a, "up", False):                      # started by the dashboard button: bring the voting app up first
+        cmd_up(a, cfg)
     graph = need(DEPS_FILE, "map")
     runtime.RT["cfg"] = cfg
     if a.wait:
@@ -207,6 +209,7 @@ def main():
     p.add_argument("--goal", help="autopilot: a what-if question for the agents to investigate")
     p.add_argument("--approve", action="store_true", help="autopilot: ask a human before high-risk experiments")
     p.add_argument("--no-heal", action="store_true", help="autopilot: report only, do not apply fixes")
+    p.add_argument("--up", action="store_true", help="mystery: start the voting app first (used by the dashboard's Start button)")
     p.add_argument("--wait", action="store_true", help="mystery: judge mode, wait for a pick on the dashboard")
     p.add_argument("--trials", type=int, help="mystery: run N random hidden-fault trials and print an accuracy table")
     p.add_argument("--choice", help="mystery: a menu id such as M-kill-redis (default: random)")

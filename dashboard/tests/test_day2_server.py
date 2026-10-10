@@ -33,6 +33,31 @@ class Day2ServerTests(unittest.TestCase):
         connection.close()
         return result
 
+    def test_start_mystery_runs_one_fixed_command_once(self):
+        pid_file = self.root / "runs/mystery_consumer.pid"
+        pid_file.parent.mkdir(exist_ok=True)
+        fake = SimpleNamespace(pid=4242)
+        with patch.object(server, "CONSUMER_PID", str(pid_file)), patch.object(server, "CONSUMER_LOG", str(self.root / "runs/c.log")), \
+                patch.object(server, "STOP", str(self.root / "STOP")), patch.object(server, "mystery_consumer_alive", return_value=False), \
+                patch.object(server.subprocess, "Popen", return_value=fake) as popen:
+            self.assertEqual(self.request("/mystery/start", {}), (202, {"started": True}))
+            command = popen.call_args.args[0]
+            self.assertEqual(command[1:], [str(Path(server.ROOT) / "chaospilot.py"), "mystery", "--wait", "--up"])
+            self.assertEqual(pid_file.read_text(), "4242")
+            self.assertEqual(self.request("/mystery/start", {"cmd": "rm -rf /"})[0], 400)     # nothing from the browser reaches the command
+            self.assertEqual(popen.call_count, 1)
+        with patch.object(server, "mystery_consumer_alive", return_value=True), patch.object(server.subprocess, "Popen") as popen:
+            self.assertEqual(self.request("/mystery/start", {}), (200, {"already_running": True}))
+            popen.assert_not_called()
+
+    def test_start_mystery_refuses_while_stop_file_exists(self):
+        stop = self.root / "STOP"
+        stop.write_text("")
+        with patch.object(server, "STOP", str(stop)), patch.object(server, "mystery_consumer_alive", return_value=False), \
+                patch.object(server.subprocess, "Popen") as popen:
+            self.assertEqual(self.request("/mystery/start", {}), (409, {"error": "stop_file_present"}))
+            popen.assert_not_called()
+
     def test_mystery_atomic_publication_and_valid_choices(self):
         self.idle()
         request = self.root / "runs/mystery_request.json"
