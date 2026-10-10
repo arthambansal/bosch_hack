@@ -1,0 +1,1534 @@
+{
+ "graph": {
+  "generated_at": "2026-10-10 16:04:30",
+  "app": "Docker Example Voting App",
+  "repo": "https://github.com/dockersamples/example-voting-app",
+  "network": "chaosnet",
+  "services": {
+   "vote": {
+    "container": "chaos-vote",
+    "role": "entrypoint",
+    "stateful": false,
+    "running": true,
+    "image": "dockersamples/examplevotingapp_vote",
+    "listen_ports": [
+     80,
+     34677
+    ],
+    "depends_on": [
+     "redis"
+    ],
+    "used_by": [],
+    "level": 0,
+    "blast_radius": []
+   },
+   "result": {
+    "container": "chaos-result",
+    "role": "entrypoint",
+    "stateful": false,
+    "running": true,
+    "image": "dockersamples/examplevotingapp_result",
+    "listen_ports": [
+     33709
+    ],
+    "depends_on": [
+     "db"
+    ],
+    "used_by": [],
+    "level": 0,
+    "blast_radius": []
+   },
+   "worker": {
+    "container": "chaos-worker",
+    "role": "consumer",
+    "stateful": false,
+    "running": true,
+    "image": "dockersamples/examplevotingapp_worker",
+    "listen_ports": [
+     39091
+    ],
+    "depends_on": [
+     "db",
+     "redis"
+    ],
+    "used_by": [],
+    "level": 0,
+    "blast_radius": []
+   },
+   "redis": {
+    "container": "chaos-redis",
+    "role": "queue",
+    "stateful": true,
+    "running": true,
+    "image": "redis:7.2-alpine",
+    "listen_ports": [
+     6379,
+     41711
+    ],
+    "depends_on": [],
+    "used_by": [
+     "vote",
+     "worker"
+    ],
+    "level": 1,
+    "blast_radius": [
+     "vote",
+     "worker"
+    ]
+   },
+   "db": {
+    "container": "chaos-db",
+    "role": "database",
+    "stateful": true,
+    "running": true,
+    "image": "postgres:15-alpine",
+    "listen_ports": [
+     5432,
+     34573
+    ],
+    "depends_on": [],
+    "used_by": [
+     "result",
+     "worker"
+    ],
+    "level": 1,
+    "blast_radius": [
+     "result",
+     "worker"
+    ]
+   }
+  },
+  "edges": [
+   {
+    "from": "result",
+    "to": "db",
+    "evidence": [
+     "declared",
+     "manual",
+     "observed"
+    ]
+   },
+   {
+    "from": "vote",
+    "to": "redis",
+    "evidence": [
+     "declared",
+     "manual"
+    ]
+   },
+   {
+    "from": "worker",
+    "to": "db",
+    "evidence": [
+     "declared",
+     "manual",
+     "observed"
+    ]
+   },
+   {
+    "from": "worker",
+    "to": "redis",
+    "evidence": [
+     "declared",
+     "manual",
+     "observed"
+    ]
+   }
+  ],
+  "data_flows": [
+   "vote -> redis",
+   "result -> db",
+   "worker -> db",
+   "worker -> redis"
+  ]
+ },
+ "thresholds": {
+  "max_error_rate": 0.5,
+  "max_p95_ms": 2500,
+  "breach_ticks": 3,
+  "max_experiment_s": 45
+ },
+ "baseline": {
+  "vote_write": {
+   "p95_ms": 41.3,
+   "error_rate": 0.0
+  },
+  "result_page": {
+   "p95_ms": 32.8,
+   "error_rate": 0.0
+  }
+ },
+ "gate_sync": {
+  "version": 1,
+  "lock": "runs/gate.lock",
+  "submit": "agentic.gate.submit_decision"
+ },
+ "run_dir": "/repo/runs/auto_20261011_110000",
+ "report_path": null,
+ "cleanup": null,
+ "approval_request": null,
+ "approval_result": null,
+ "score": null,
+ "findings": null,
+ "faulted": [],
+ "queue": [],
+ "phase": "running",
+ "run_status": "running",
+ "agent_active": "evaluator",
+ "experiment": {
+  "id": "E1",
+  "name": "Kill Redis to test recovery",
+  "steps": [
+   {
+    "type": "kill",
+    "target": "redis",
+    "delay_s": 0
+   }
+  ],
+  "reason": "Redis is a single in-memory copy",
+  "hypothesis": "H1",
+  "predicted_probes": [
+   "vote_write"
+  ]
+ },
+ "guard": {
+  "ticks": 0,
+  "reasons": [],
+  "tripped": true
+ },
+ "probes": {
+  "vote_write": {
+   "series": [
+    [
+     -60.0,
+     14,
+     true
+    ],
+    [
+     -59.45,
+     13,
+     true
+    ],
+    [
+     -58.9,
+     16,
+     true
+    ],
+    [
+     -58.35,
+     12,
+     true
+    ],
+    [
+     -57.8,
+     15,
+     true
+    ],
+    [
+     -57.25,
+     14,
+     true
+    ],
+    [
+     -56.7,
+     12,
+     true
+    ],
+    [
+     -56.15,
+     15,
+     true
+    ],
+    [
+     -55.6,
+     12,
+     true
+    ],
+    [
+     -55.05,
+     15,
+     true
+    ],
+    [
+     -54.5,
+     12,
+     true
+    ],
+    [
+     -53.95,
+     13,
+     true
+    ],
+    [
+     -53.4,
+     15,
+     true
+    ],
+    [
+     -52.85,
+     17,
+     true
+    ],
+    [
+     -52.3,
+     13,
+     true
+    ],
+    [
+     -51.75,
+     13,
+     true
+    ],
+    [
+     -51.2,
+     16,
+     true
+    ],
+    [
+     -50.65,
+     18,
+     true
+    ],
+    [
+     -50.1,
+     15,
+     true
+    ],
+    [
+     -49.55,
+     14,
+     true
+    ],
+    [
+     -49.0,
+     18,
+     true
+    ],
+    [
+     -48.45,
+     12,
+     true
+    ],
+    [
+     -47.9,
+     17,
+     true
+    ],
+    [
+     -47.35,
+     14,
+     true
+    ],
+    [
+     -46.8,
+     13,
+     true
+    ],
+    [
+     -46.25,
+     13,
+     true
+    ],
+    [
+     -45.7,
+     14,
+     true
+    ],
+    [
+     -45.15,
+     17,
+     true
+    ],
+    [
+     -44.6,
+     13,
+     true
+    ],
+    [
+     -44.05,
+     15,
+     true
+    ],
+    [
+     -43.5,
+     16,
+     true
+    ],
+    [
+     -42.95,
+     14,
+     true
+    ],
+    [
+     -42.4,
+     15,
+     true
+    ],
+    [
+     -41.85,
+     12,
+     true
+    ],
+    [
+     -41.3,
+     12,
+     true
+    ],
+    [
+     -40.75,
+     13,
+     true
+    ],
+    [
+     -40.2,
+     16,
+     true
+    ],
+    [
+     -39.65,
+     15,
+     true
+    ],
+    [
+     -39.1,
+     14,
+     true
+    ],
+    [
+     -38.55,
+     16,
+     true
+    ],
+    [
+     -38.0,
+     15,
+     true
+    ],
+    [
+     -37.45,
+     14,
+     true
+    ],
+    [
+     -36.9,
+     17,
+     true
+    ],
+    [
+     -36.35,
+     16,
+     true
+    ],
+    [
+     -35.8,
+     13,
+     true
+    ],
+    [
+     -35.25,
+     15,
+     true
+    ],
+    [
+     -34.7,
+     15,
+     true
+    ],
+    [
+     -34.15,
+     17,
+     true
+    ],
+    [
+     -33.6,
+     16,
+     true
+    ],
+    [
+     -33.05,
+     14,
+     true
+    ],
+    [
+     -32.5,
+     18,
+     true
+    ],
+    [
+     -31.95,
+     13,
+     true
+    ],
+    [
+     -31.4,
+     15,
+     true
+    ],
+    [
+     -30.85,
+     17,
+     true
+    ],
+    [
+     -30.3,
+     13,
+     true
+    ],
+    [
+     -29.75,
+     15,
+     true
+    ],
+    [
+     -29.2,
+     12,
+     true
+    ],
+    [
+     -28.65,
+     16,
+     true
+    ],
+    [
+     -28.1,
+     17,
+     true
+    ],
+    [
+     -27.55,
+     15,
+     true
+    ],
+    [
+     -27.0,
+     17,
+     true
+    ],
+    [
+     -26.45,
+     14,
+     true
+    ],
+    [
+     -25.9,
+     16,
+     true
+    ],
+    [
+     -25.35,
+     16,
+     true
+    ],
+    [
+     -24.8,
+     15,
+     true
+    ],
+    [
+     -24.25,
+     15,
+     true
+    ],
+    [
+     -23.7,
+     17,
+     true
+    ],
+    [
+     -23.15,
+     18,
+     true
+    ],
+    [
+     -22.6,
+     15,
+     true
+    ],
+    [
+     -22.05,
+     16,
+     true
+    ],
+    [
+     -21.5,
+     12,
+     true
+    ],
+    [
+     -20.95,
+     16,
+     true
+    ],
+    [
+     -20.4,
+     16,
+     true
+    ],
+    [
+     -19.85,
+     18,
+     true
+    ],
+    [
+     -19.3,
+     17,
+     true
+    ],
+    [
+     -18.75,
+     14,
+     true
+    ],
+    [
+     -18.2,
+     14,
+     true
+    ],
+    [
+     -17.65,
+     16,
+     true
+    ],
+    [
+     -17.1,
+     12,
+     true
+    ],
+    [
+     -16.55,
+     15,
+     true
+    ],
+    [
+     -16.0,
+     13,
+     true
+    ],
+    [
+     -15.45,
+     13,
+     true
+    ],
+    [
+     -14.9,
+     12,
+     true
+    ],
+    [
+     -14.35,
+     17,
+     true
+    ],
+    [
+     -13.8,
+     13,
+     true
+    ],
+    [
+     -13.25,
+     13,
+     true
+    ],
+    [
+     -12.7,
+     14,
+     true
+    ],
+    [
+     -12.15,
+     17,
+     true
+    ],
+    [
+     -11.6,
+     12,
+     true
+    ],
+    [
+     -11.05,
+     15,
+     true
+    ],
+    [
+     -10.5,
+     15,
+     true
+    ],
+    [
+     -9.95,
+     17,
+     true
+    ],
+    [
+     -9.4,
+     17,
+     true
+    ],
+    [
+     -8.85,
+     17,
+     true
+    ],
+    [
+     -8.3,
+     14,
+     true
+    ],
+    [
+     -7.75,
+     14,
+     true
+    ],
+    [
+     -7.2,
+     14,
+     true
+    ],
+    [
+     -6.65,
+     17,
+     true
+    ],
+    [
+     -6.1,
+     18,
+     true
+    ],
+    [
+     -5.55,
+     13,
+     true
+    ],
+    [
+     -5.0,
+     13,
+     true
+    ],
+    [
+     -4.45,
+     13,
+     true
+    ],
+    [
+     -3.9,
+     13,
+     true
+    ],
+    [
+     -3.35,
+     15,
+     true
+    ],
+    [
+     -2.8,
+     16,
+     true
+    ],
+    [
+     -2.25,
+     14,
+     true
+    ],
+    [
+     -1.7,
+     12,
+     true
+    ],
+    [
+     -1.15,
+     15,
+     true
+    ],
+    [
+     -0.6,
+     14,
+     true
+    ],
+    [
+     -0.05,
+     15,
+     true
+    ]
+   ],
+   "n": 8,
+   "error_rate": 0.0,
+   "p50_ms": 15,
+   "p95_ms": 19
+  },
+  "result_page": {
+   "series": [
+    [
+     -60.0,
+     16,
+     true
+    ],
+    [
+     -59.45,
+     14,
+     true
+    ],
+    [
+     -58.9,
+     13,
+     true
+    ],
+    [
+     -58.35,
+     14,
+     true
+    ],
+    [
+     -57.8,
+     14,
+     true
+    ],
+    [
+     -57.25,
+     10,
+     true
+    ],
+    [
+     -56.7,
+     15,
+     true
+    ],
+    [
+     -56.15,
+     15,
+     true
+    ],
+    [
+     -55.6,
+     15,
+     true
+    ],
+    [
+     -55.05,
+     15,
+     true
+    ],
+    [
+     -54.5,
+     12,
+     true
+    ],
+    [
+     -53.95,
+     12,
+     true
+    ],
+    [
+     -53.4,
+     11,
+     true
+    ],
+    [
+     -52.85,
+     14,
+     true
+    ],
+    [
+     -52.3,
+     10,
+     true
+    ],
+    [
+     -51.75,
+     10,
+     true
+    ],
+    [
+     -51.2,
+     11,
+     true
+    ],
+    [
+     -50.65,
+     11,
+     true
+    ],
+    [
+     -50.1,
+     12,
+     true
+    ],
+    [
+     -49.55,
+     10,
+     true
+    ],
+    [
+     -49.0,
+     10,
+     true
+    ],
+    [
+     -48.45,
+     11,
+     true
+    ],
+    [
+     -47.9,
+     11,
+     true
+    ],
+    [
+     -47.35,
+     12,
+     true
+    ],
+    [
+     -46.8,
+     10,
+     true
+    ],
+    [
+     -46.25,
+     15,
+     true
+    ],
+    [
+     -45.7,
+     14,
+     true
+    ],
+    [
+     -45.15,
+     11,
+     true
+    ],
+    [
+     -44.6,
+     12,
+     true
+    ],
+    [
+     -44.05,
+     12,
+     true
+    ],
+    [
+     -43.5,
+     12,
+     true
+    ],
+    [
+     -42.95,
+     11,
+     true
+    ],
+    [
+     -42.4,
+     15,
+     true
+    ],
+    [
+     -41.85,
+     16,
+     true
+    ],
+    [
+     -41.3,
+     13,
+     true
+    ],
+    [
+     -40.75,
+     13,
+     true
+    ],
+    [
+     -40.2,
+     11,
+     true
+    ],
+    [
+     -39.65,
+     11,
+     true
+    ],
+    [
+     -39.1,
+     12,
+     true
+    ],
+    [
+     -38.55,
+     12,
+     true
+    ],
+    [
+     -38.0,
+     15,
+     true
+    ],
+    [
+     -37.45,
+     11,
+     true
+    ],
+    [
+     -36.9,
+     10,
+     true
+    ],
+    [
+     -36.35,
+     16,
+     true
+    ],
+    [
+     -35.8,
+     13,
+     true
+    ],
+    [
+     -35.25,
+     11,
+     true
+    ],
+    [
+     -34.7,
+     13,
+     true
+    ],
+    [
+     -34.15,
+     10,
+     true
+    ],
+    [
+     -33.6,
+     13,
+     true
+    ],
+    [
+     -33.05,
+     16,
+     true
+    ],
+    [
+     -32.5,
+     15,
+     true
+    ],
+    [
+     -31.95,
+     14,
+     true
+    ],
+    [
+     -31.4,
+     12,
+     true
+    ],
+    [
+     -30.85,
+     12,
+     true
+    ],
+    [
+     -30.3,
+     11,
+     true
+    ],
+    [
+     -29.75,
+     15,
+     true
+    ],
+    [
+     -29.2,
+     13,
+     true
+    ],
+    [
+     -28.65,
+     15,
+     true
+    ],
+    [
+     -28.1,
+     12,
+     true
+    ],
+    [
+     -27.55,
+     11,
+     true
+    ],
+    [
+     -27.0,
+     15,
+     true
+    ],
+    [
+     -26.45,
+     16,
+     true
+    ],
+    [
+     -25.9,
+     15,
+     true
+    ],
+    [
+     -25.35,
+     15,
+     true
+    ],
+    [
+     -24.8,
+     15,
+     true
+    ],
+    [
+     -24.25,
+     14,
+     true
+    ],
+    [
+     -23.7,
+     11,
+     true
+    ],
+    [
+     -23.15,
+     13,
+     true
+    ],
+    [
+     -22.6,
+     12,
+     true
+    ],
+    [
+     -22.05,
+     10,
+     true
+    ],
+    [
+     -21.5,
+     10,
+     true
+    ],
+    [
+     -20.95,
+     12,
+     true
+    ],
+    [
+     -20.4,
+     12,
+     true
+    ],
+    [
+     -19.85,
+     14,
+     true
+    ],
+    [
+     -19.3,
+     16,
+     true
+    ],
+    [
+     -18.75,
+     13,
+     true
+    ],
+    [
+     -18.2,
+     16,
+     true
+    ],
+    [
+     -17.65,
+     16,
+     true
+    ],
+    [
+     -17.1,
+     16,
+     true
+    ],
+    [
+     -16.55,
+     12,
+     true
+    ],
+    [
+     -16.0,
+     11,
+     true
+    ],
+    [
+     -15.45,
+     11,
+     true
+    ],
+    [
+     -14.9,
+     11,
+     true
+    ],
+    [
+     -14.35,
+     11,
+     true
+    ],
+    [
+     -13.8,
+     14,
+     true
+    ],
+    [
+     -13.25,
+     15,
+     true
+    ],
+    [
+     -12.7,
+     15,
+     true
+    ],
+    [
+     -12.15,
+     13,
+     true
+    ],
+    [
+     -11.6,
+     14,
+     true
+    ],
+    [
+     -11.05,
+     15,
+     true
+    ],
+    [
+     -10.5,
+     11,
+     true
+    ],
+    [
+     -9.95,
+     14,
+     true
+    ],
+    [
+     -9.4,
+     15,
+     true
+    ],
+    [
+     -8.85,
+     15,
+     true
+    ],
+    [
+     -8.3,
+     15,
+     true
+    ],
+    [
+     -7.75,
+     13,
+     true
+    ],
+    [
+     -7.2,
+     11,
+     true
+    ],
+    [
+     -6.65,
+     15,
+     true
+    ],
+    [
+     -6.1,
+     12,
+     true
+    ],
+    [
+     -5.55,
+     15,
+     true
+    ],
+    [
+     -5.0,
+     16,
+     true
+    ],
+    [
+     -4.45,
+     12,
+     true
+    ],
+    [
+     -3.9,
+     12,
+     true
+    ],
+    [
+     -3.35,
+     16,
+     true
+    ],
+    [
+     -2.8,
+     14,
+     true
+    ],
+    [
+     -2.25,
+     11,
+     true
+    ],
+    [
+     -1.7,
+     11,
+     true
+    ],
+    [
+     -1.15,
+     11,
+     true
+    ],
+    [
+     -0.6,
+     15,
+     true
+    ],
+    [
+     -0.05,
+     15,
+     true
+    ]
+   ],
+   "n": 8,
+   "error_rate": 0.0,
+   "p50_ms": 13,
+   "p95_ms": 17
+  }
+ },
+ "events": [
+  {
+   "t": 1791649976.0,
+   "kind": "ai",
+   "msg": "[22:02:56] [Experimenter] E1: Kill Redis to test recovery. predicts {probes_affected: [vote_write], data_loss: true, recovers: false}"
+  },
+  {
+   "t": 1791649977.0,
+   "kind": "ok",
+   "msg": "[22:02:57] [Governor] approved E1 Kill Redis to test recovery"
+  },
+  {
+   "t": 1791649980.0,
+   "kind": "fault",
+   "msg": "[22:03:00] INJECT KILL -> redis OK"
+  },
+  {
+   "t": 1791649982.0,
+   "kind": "guard",
+   "msg": "[22:03:02] guard 3/3 -> KILL SWITCH. RESTORE KILL -> redis OK"
+  },
+  {
+   "t": 1791649983.0,
+   "kind": "ok",
+   "msg": "[22:03:03] Recovered in 0.4s"
+  },
+  {
+   "t": 1791649986.0,
+   "kind": "warn",
+   "msg": "[22:03:06] [Truth] GRAY FAILURE: probes healthy but canaries are not reaching Postgres"
+  },
+  {
+   "t": 1791649987.0,
+   "kind": "fault",
+   "msg": "[22:03:07] CASCADE FAILURE: [worker] crashed and did NOT come back on its own"
+  }
+ ],
+ "truth": {
+  "status": "diverged",
+  "monitoring": "healthy",
+  "canaries": {
+   "sent": 24,
+   "stored": 19,
+   "pending": 1,
+   "suspected_lost": 4,
+   "last_lag_s": 0.41,
+   "grace_s": 10
+  },
+  "invariants": [
+   {
+    "name": "every_vote_counted",
+    "ok": false,
+    "detail": "4 canaries not in Postgres after 10 s"
+   },
+   {
+    "name": "worker_running",
+    "ok": false,
+    "detail": "chaos-worker exited (code 1) at 11:02:07"
+   },
+   {
+    "name": "queue_drains",
+    "ok": false,
+    "detail": "redis 'votes' length growing: 3 -> 11"
+   }
+  ],
+  "diverged_at": 1791649986.0,
+  "updated_at": 1791650000.0
+ },
+ "mystery": {
+  "state": "off",
+  "trial": 0,
+  "menu": [
+   {
+    "id": "M-kill-redis",
+    "label": "Crash the queue (Redis)",
+    "fault": "kill",
+    "target": "redis"
+   },
+   {
+    "id": "M-kill-db",
+    "label": "Crash the database (Postgres)",
+    "fault": "kill",
+    "target": "db"
+   },
+   {
+    "id": "M-kill-worker",
+    "label": "Crash the worker",
+    "fault": "kill",
+    "target": "worker"
+   },
+   {
+    "id": "M-pause-redis",
+    "label": "Freeze the queue (Redis)",
+    "fault": "pause",
+    "target": "redis"
+   },
+   {
+    "id": "M-pause-db",
+    "label": "Freeze the database",
+    "fault": "pause",
+    "target": "db"
+   },
+   {
+    "id": "M-partition-worker",
+    "label": "Cut the worker off the network",
+    "fault": "partition",
+    "target": "worker"
+   },
+   {
+    "id": "M-latency-redis",
+    "label": "Slow the queue down (400 ms)",
+    "fault": "latency",
+    "target": "redis"
+   },
+   {
+    "id": "M-kill-result",
+    "label": "Crash the result page",
+    "fault": "kill",
+    "target": "result"
+   }
+  ],
+  "chosen_by": null,
+  "injected_at": null,
+  "detected_at": null,
+  "diagnosed_at": null,
+  "detected_by": null,
+  "guess": null,
+  "answer": null,
+  "correct": null,
+  "accuracy": {
+   "trials": 0,
+   "top1": 0,
+   "top3": 0,
+   "target": 0
+  }
+ },
+ "memory": {
+  "last_hit": null,
+  "signatures": 4
+ },
+ "fixes": [],
+ "predictions": {
+  "items": [],
+  "right": 0,
+  "total": 0
+ },
+ "regression": [],
+ "plan_ranking": {
+  "turn": 3,
+  "chosen": "pause:db",
+  "reason": "Killing Redis crashed the worker; now test whether a frozen database (not a dead one) also breaks the pipeline.",
+  "types_covered": [
+   "kill",
+   "pause"
+  ],
+  "types_required": 3,
+  "candidates": [
+   {
+    "id": "kill:db",
+    "type": "kill",
+    "target": "db",
+    "risk_score": 9.0,
+    "predicted_probes": [
+     "result_page"
+    ],
+    "tried": false
+   },
+   {
+    "id": "kill:redis",
+    "type": "kill",
+    "target": "redis",
+    "risk_score": 8.5,
+    "predicted_probes": [
+     "vote_write"
+    ],
+    "tried": true
+   },
+   {
+    "id": "pause:db",
+    "type": "pause",
+    "target": "db",
+    "risk_score": 8.0,
+    "predicted_probes": [
+     "result_page"
+    ],
+    "tried": false
+   },
+   {
+    "id": "partition:worker",
+    "type": "partition",
+    "target": "worker",
+    "risk_score": 7.0,
+    "predicted_probes": [],
+    "tried": false
+   },
+   {
+    "id": "latency:redis",
+    "type": "latency",
+    "target": "redis",
+    "risk_score": 5.5,
+    "predicted_probes": [
+     "vote_write"
+    ],
+    "tried": false
+   },
+   {
+    "id": "spike:vote",
+    "type": "spike",
+    "target": "vote",
+    "risk_score": 4.0,
+    "predicted_probes": [
+     "vote_write"
+    ],
+    "tried": false
+   }
+  ]
+ }
+}

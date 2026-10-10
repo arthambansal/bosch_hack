@@ -181,3 +181,21 @@ def diagnostician_node(state):
     LIVE.event("ai", f"[Diagnostician] {res['id']} root cause: {final.get('root_cause')}")
     inv[res["id"]] = final
     return {"investigations": inv}
+
+
+# ---------------------------------------------------------------- Day 2 interfaces (Dipen) — DAY2_CONTRACT.md 4.2, 4.3, 5
+# STUBS. Replace the bodies, keep the signatures.
+def diagnose_blind(res, cfg, graph, offline=False):
+    """Name the hidden fault and target from evidence only. `res` is redacted (no name/steps/faults_injected/...)."""
+    import time as _t
+    t0 = _t.time()
+    stuck = list(res.get("stuck_services") or [])
+    target = stuck[0] if stuck else "redis"
+    guess = {"fault": "kill", "target": target, "confidence": 0.2}
+    return {**guess, "top3": [guess], "root_cause": "stub guess: blind diagnosis not implemented yet",
+            "evidence": [], "memory_hit": False, "seconds": round(_t.time() - t0, 3)}
+
+
+def remember_confirmed(res, fault, root_cause):
+    """Save a confirmed failure signature (called after a mystery reveal or a verified fix). STUB: does nothing."""
+    return None
