@@ -9,6 +9,7 @@ import os
 import sys
 import re
 import subprocess
+import platform
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -127,8 +128,16 @@ def mystery_consumer_alive():
     """Is `chaospilot.py mystery --wait` already running (from a terminal or from this button)?"""
     try:
         pid = int(Path(CONSUMER_PID).read_text().strip())
-        os.kill(pid, 0)
-        command = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=3).stdout
+        if pid <= 0:
+            return False
+        if platform.system() == "Windows":
+            # os.kill(pid, 0) can terminate a Windows process; query identity instead.
+            query = f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"
+            command = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", query],
+                                     capture_output=True, text=True, timeout=3, check=True).stdout
+        else:
+            os.kill(pid, 0)
+            command = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=3, check=True).stdout
         return "chaospilot" in command and "mystery" in command          # a reused pid of some other program does not count
     except (OSError, ValueError, subprocess.SubprocessError):
         return False

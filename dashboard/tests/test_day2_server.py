@@ -46,9 +46,42 @@ class Day2ServerTests(unittest.TestCase):
             self.assertEqual(pid_file.read_text(), "4242")
             self.assertEqual(self.request("/mystery/start", {"cmd": "rm -rf /"})[0], 400)     # nothing from the browser reaches the command
             self.assertEqual(popen.call_count, 1)
+            # No env override: the child inherits the server environment, including
+            # any securely configured webhook. Never inspect or print its value.
+            self.assertNotIn("env", popen.call_args.kwargs)
         with patch.object(server, "mystery_consumer_alive", return_value=True), patch.object(server.subprocess, "Popen") as popen:
             self.assertEqual(self.request("/mystery/start", {}), (200, {"already_running": True}))
             popen.assert_not_called()
+
+    def test_windows_consumer_identity_query_never_signals_process(self):
+        pid_file = self.root / "runs/mystery_consumer.pid"
+        pid_file.parent.mkdir(exist_ok=True)
+        pid_file.write_text("4242")
+        with patch.object(server, "CONSUMER_PID", str(pid_file)), patch.object(server.platform, "system", return_value="Windows"), \
+                patch.object(server.os, "kill") as kill, patch.object(server.subprocess, "run") as query:
+            query.return_value = SimpleNamespace(stdout='python "C:\\demo\\chaospilot.py" mystery --wait --up')
+            self.assertTrue(server.mystery_consumer_alive())
+            command = query.call_args.args[0]
+            self.assertEqual(command[0], "powershell.exe")
+            self.assertIn("ProcessId = 4242", command[-1])
+            kill.assert_not_called()
+            for output in ("", "python unrelated.py", ""):
+                query.return_value = SimpleNamespace(stdout=output)
+                self.assertFalse(server.mystery_consumer_alive())
+            query.side_effect = server.subprocess.TimeoutExpired(command, 3)
+            self.assertFalse(server.mystery_consumer_alive())
+            query.side_effect = FileNotFoundError()
+            self.assertFalse(server.mystery_consumer_alive())
+            kill.assert_not_called()
+
+    def test_windows_consumer_rejects_invalid_pid_before_query(self):
+        pid_file = self.root / "runs/mystery_consumer.pid"
+        pid_file.parent.mkdir(exist_ok=True)
+        with patch.object(server, "CONSUMER_PID", str(pid_file)), patch.object(server.subprocess, "run") as query:
+            for value in ("0", "-1", "4242; malicious", "invalid"):
+                pid_file.write_text(value)
+                self.assertFalse(server.mystery_consumer_alive())
+            query.assert_not_called()
 
     def test_start_mystery_refuses_while_stop_file_exists(self):
         stop = self.root / "STOP"
