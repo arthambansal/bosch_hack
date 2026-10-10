@@ -19,6 +19,10 @@ CATALOG = {
                       "why": "The queue lost accepted work when it crashed. Turn on append-only persistence (fsync always)."},
     "restart-policy": {"file": "restart-policy.yml",
                        "why": "Crashed containers stayed down until a human restarted them. Add `restart: unless-stopped`."},
+    "postgres-healthcheck": {"file": "postgres-healthcheck.yml",
+                             "why": "Worker and result can start before Postgres is ready. Add a Postgres readiness check and make dependent services wait for a healthy database."},
+    "postgres-recovery": {"file": "postgres-recovery.yml",
+                          "why": "Worker and result exited during the Postgres outage and did not recover within the timeout. Restart them on failure."},
 }
 
 
@@ -31,10 +35,11 @@ def select_fixes(rows, results, graph):
         chosen.setdefault(fix_id, {"id": fix_id, **CATALOG[fix_id], "rows": []})["rows"].append(row_id)
 
     for row in rows:
-        if row["action_priority"] == "Low":
-            continue
         res = by_id.get(row["id"], {})
         steps = res.get("steps", [])
+
+        if row["action_priority"] == "Low":
+            continue
         lost = (res.get("delivery") or {}).get("lost") or 0
         if lost > 0 and any(graph["services"].get(s["target"], {}).get("role") == "queue" for s in steps):
             pick("redis-durable", row["id"])
@@ -149,6 +154,7 @@ ALLOWED_KEYS = {
     "restart",
     "deploy",
     "depends_on",
+    "healthcheck",
 }
 
 def validate_generated_override(override):
