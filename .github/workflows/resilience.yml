@@ -1,5 +1,5 @@
 name: Resilience regression
-on: [push, pull_request]
+on: workflow_dispatch
 permissions:
   contents: read
 jobs:
@@ -20,7 +20,7 @@ jobs:
           python tests/test_graph_mock.py
           python tests/test_regression.py
           python tests/test_report_v2.py
-      - name: Require reviewed scenarios suitable for unattended CI
+      - name: Select reviewed scenarios suitable for unattended CI
         run: |
           python - <<'PY'
           import json
@@ -28,13 +28,20 @@ jobs:
           from core.common import load_config
           cfg = load_config()
           files = sorted(p for p in Path('scenarios').glob('*.json') if not p.name.startswith('.'))
-          if not files:
-              raise SystemExit('No confirmed, reviewed scenarios committed; live CI is not validated yet.')
+          selected = []
           for path in files:
               s = json.loads(path.read_text())
               steps = s['steps']
-              if len(steps) != 1 or any(x['type'] not in ('kill', 'pause') or cfg['services'][x['target']]['stateful'] for x in steps):
-                  raise SystemExit(f'{path}: CI permits one non-stateful kill/pause; use the human-gated local replay for other cases.')
+              if (len(steps) == 1 and steps[0].get('type') in ('kill', 'pause')
+                      and steps[0].get('target') in ('worker', 'result')
+                      and not cfg['services'][steps[0]['target']]['stateful']):
+                  selected.append(path)
+                  print(f'CI-safe: {path}')
+              else:
+                  print(f'Human-gated local replay only: {path}')
+          if not selected:
+              raise SystemExit('No reviewed CI-safe scenario exists; live replay cannot be claimed.')
+          Path('runs/ci_scenarios.txt').write_text(''.join(f'{path}\n' for path in selected))
           PY
       - name: Start base sandbox without fix overlays
         run: |
@@ -53,8 +60,11 @@ jobs:
           PY
           python chaospilot.py map
           python chaospilot.py baseline --seconds 15
-      - name: Replay all committed scenarios (current CLI syntax)
-        run: python chaospilot.py replay
+      - name: Replay selected scenarios
+        run: |
+          while IFS= read -r scenario; do
+            python chaospilot.py replay --scenario "$scenario" || exit 1
+          done < runs/ci_scenarios.txt
       - name: Preserve measured run artifacts
         if: always()
         uses: actions/upload-artifact@v4

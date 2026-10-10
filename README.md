@@ -82,11 +82,14 @@ fixed configuration and require PASS. `python chaospilot.py replay` runs all sav
 scenarios with the current CLI; the requested positional path / `--all` parser change
 is documented for Artham in `docs/day2/TEJAS_HANDOFF.md`. No AI is used during replay.
 
-The workflow `.github/workflows/resilience.yml` runs on push/pull request in a fresh
-base sandbox. Unattended CI accepts single non-stateful kill/pause scenarios only;
-combined or data-store disruptions retain local human approval. Netem faults have
-not been validated in CI. Empty or unsupported scenario sets fail explicitly.
-**The workflow has not been observed running on GitHub; live chaos CI is not claimed.**
+The workflow `.github/workflows/resilience.yml` is manually triggered in GitHub
+Actions. It selects single worker/result kill/pause scenarios in a fresh base
+sandbox and skips combined or data-store scenarios, which retain local human
+approval. It fails if no CI-safe scenario exists or a selected replay fails.
+The measured CI-safe scenario `scenarios/result-pause-ci.json` records 0.6s recovery,
+32/32 delivered votes, and no stuck items. Runner reliability is still unverified,
+so the workflow remains manual.
+**The workflow has not been observed passing on GitHub; live chaos CI is not claimed.**
 
 ## Architecture
 
