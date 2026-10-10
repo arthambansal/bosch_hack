@@ -1,13 +1,18 @@
-"""DIAGNOSTICIAN AGENT (evidence-based root-cause analysis). Owner: Dipen. See blueprint 6.3 and 11.
+"""DIAGNOSTICIAN AGENT. Owner: Dipen. See blueprint 6.3 and 11.
 
-Runs only after a suspicious result (crash cascade, lost votes, no recovery, kill switch, wrong prediction).
-Now: investigate() below (ReAct agent with READ-ONLY tools: logs, container state, queue depth, DB count,
-config), with a rule-based fallback. Output -> state["investigations"][experiment_id]; the Experimenter reads it.
-Upgrade (Dipen): give it a timeline tool (events.log for this experiment) and a "compare with baseline" tool;
-make it state confidence honestly and list what evidence would change its mind.
+Two phases, both feed state["investigations"][experiment_id]:
+  Phase 1  detect_fault()  (Dipen, deterministic code): lists the SYMPTOMS with exact evidence - probe errors, stuck services,
+           lost votes, no recovery, Observer events (container died, exit code). No AI, cannot be argued with.
+  Phase 2  investigate()   (ReAct agent with READ-ONLY tools: logs, container state, queue depth, DB count, config):
+           explains WHY it happened, starting from the Phase 1 evidence. Rule-based fallback if the AI is unavailable
+           or its answer is empty / just a copied log line.
+Output: {root_cause, evidence[], affected_services[], confidence, suggested_fix, by, fault_detected}
+Upgrade (Dipen): compare with baseline, timeline tool, match against the Knowledge Store signatures (core/signatures.py),
+state confidence honestly and say what evidence would change the diagnosis.
 """
 from core.agentkit import ReActAgent
 from core.common import LIVE
+from core.knowledge import load_observation
 from core.tools import make_tools
 
 from ..runtime import cfg
@@ -17,7 +22,48 @@ INVESTIGATION_SCHEMA = {"root_cause": "one or two sentences", "evidence": ["quot
                         "suggested_fix": "one concrete change"}
 
 
-def investigate(cfg, graph, res, offline=False):
+def detect_fault(res, configuration=None, baseline=None, observation=None):
+    evidence, affected = [], set()
+    configuration, baseline = configuration or {}, baseline or {}
+    entries = {p['name']: p.get('entry') for p in configuration.get('probes', [])}
+    for service in res.get('stuck_services') or []:
+        affected.add(service)
+        detail = (res.get('stuck_details') or {}).get(service) or {}
+        evidence.append(f"{service} was stopped at inspection; exit_code={detail.get('exit_code', 'unknown')}")
+    for probe, measured in (res.get('probes') or {}).items():
+        rate = measured.get('error_rate')
+        if isinstance(rate, (int, float)) and rate > 0:
+            evidence.append(f"{probe}: error_rate={rate:.1%}")
+            if entries.get(probe):
+                affected.add(entries[probe])
+        before = ((baseline.get('probes') or {}).get(probe) or {}).get('p95_ms')
+        latency = measured.get('p95_ms')
+        if isinstance(before, (int, float)) and before > 0 and isinstance(latency, (int, float)) and latency > 2 * before:
+            evidence.append(f"{probe}: p95={latency}ms exceeds twice baseline={before}ms")
+            if entries.get(probe):
+                affected.add(entries[probe])
+    lost = (res.get('delivery') or {}).get('lost')
+    if isinstance(lost, (int, float)) and lost > 0:
+        evidence.append(f"{lost} accepted votes undelivered at measurement cutoff")
+    if 'recovery_s' in res and res['recovery_s'] is None:
+        evidence.append('Recovery not observed within measurement window')
+    if observation and observation.get('experiment') == res.get('id'):
+        for event in observation.get('events') or []:
+            if event.get('event') == 'die':
+                evidence.append(f"Observer: {event.get('service')} exited at t={event.get('t')}; exit_code={event.get('exit_code')}")
+                if event.get('service'):
+                    affected.add(event['service'])
+    if res.get('status') == 'aborted':
+        evidence.append(f"Experiment stopped: {res.get('abort_reason') or 'reason unavailable'}")
+    detected = bool(evidence)
+    if not detected:
+        evidence.append('No fault confirmed by available measurements; full health is not established')
+    return ({'root_cause': 'Phase 2', 'evidence': evidence,
+             'affected_services': sorted(affected), 'confidence': 'low',
+             'suggested_fix': ''}, detected)
+
+
+def investigate(cfg, graph, res, offline=False, symptoms=None):
     facts = {k: res.get(k) for k in ("name", "status", "abort_reason", "recovery_s", "stuck_services",
                                      "stuck_details", "delivery", "prediction", "prediction_check")}
     # what was REALLY injected (e.g. "LATENCY 400ms -> redis"). The raw step field delay_s is only the wait before the
@@ -28,6 +74,8 @@ def investigate(cfg, graph, res, offline=False):
                      "logs is OUR safety system restoring services after the error rate got too high; it never causes "
                      "failures. delivery.lost is the number of lost votes: do not claim more than that.")
     facts["error_rate_by_probe"] = {k: v.get("error_rate") for k, v in (res.get("probes") or {}).items()}
+    if symptoms:
+        facts["detected_symptoms"] = symptoms.get("evidence")      # Phase 1 evidence (deterministic)
     agent = ReActAgent(
         "Diagnostician",
         "an SRE doing root-cause analysis right after a chaos experiment. Use read-only tools (logs, container "
@@ -39,7 +87,7 @@ def investigate(cfg, graph, res, offline=False):
     return {"final": final, "tool_calls": len(trace), "trace": trace}
 
 
-def rule_based(res):
+def rule_based(res, graph=None):
     stuck, details = res.get("stuck_services") or [], res.get("stuck_details") or {}
     lost = (res.get("delivery") or {}).get("lost") or 0
     if stuck:
@@ -59,15 +107,23 @@ def rule_based(res):
 
 def diagnostician_node(state):
     LIVE.set(agent_active="diagnostician")
+    inv = dict(state.get("investigations") or {})
+    if not state.get("results"):
+        return {"investigations": inv}
     res = state["results"][-1]
-    out = investigate(cfg(), state["graph"], res, offline=state.get("offline", False))
+    symptoms, detected = detect_fault(res, cfg(), state.get("baseline"), load_observation(res.get("id")))      # Phase 1
+    out = investigate(cfg(), state.get("graph") or {}, res, offline=state.get("offline", False), symptoms=symptoms)  # Phase 2
     final = out.get("final")
     cause = str((final or {}).get("root_cause", "")).strip()
-    if not final or len(cause) < 25 or cause.upper().startswith("KILL SWITCH"):   # empty or just a copied log line
+    if not final or len(cause) < 25 or cause.upper().startswith("KILL SWITCH"):    # empty, or just a copied log line
         final = None
-    final = final or rule_based(res)
-    final["by"] = "agent" if out.get("final") and final is out.get("final") else "rules"
+    by = "agent" if final else "rules"
+    final = dict(final or rule_based(res))
+    # Phase 1 evidence always travels with the diagnosis, then whatever the agent or rules cited
+    final["evidence"] = list(dict.fromkeys(list(symptoms.get("evidence") or []) + [str(e) for e in final.get("evidence") or []]))
+    final["affected_services"] = sorted(set(final.get("affected_services") or []) | set(symptoms.get("affected_services") or []))
+    final["fault_detected"] = detected
+    final["by"] = by
     LIVE.event("ai", f"[Diagnostician] {res['id']} root cause: {final.get('root_cause')}")
-    inv = dict(state.get("investigations") or {})
     inv[res["id"]] = final
     return {"investigations": inv}

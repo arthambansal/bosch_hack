@@ -9,6 +9,7 @@ import os
 
 from core.common import LIVE, STOP_FILE, save_json
 from core.fmea import build_fmea, compare_fmea
+from core.knowledge import load_observation
 
 from ..runtime import engine, run_dir
 
@@ -40,7 +41,11 @@ def evaluate_node(state):
 
 
 def needs_investigation(state):
-    return "diagnostician" if anomalous(state["results"][-1]) else "experimenter"
+    result = state["results"][-1]
+    observed = load_observation(result.get("id")) or {}
+    exited = any(e.get("event") == "die" and str(e.get("exit_code", "0")) != "0"
+                 for e in observed.get("events") or [])
+    return "diagnostician" if anomalous(result) or exited else "experimenter"
 
 
 def verify_node(state):
