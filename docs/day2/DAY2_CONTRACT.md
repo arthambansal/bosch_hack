@@ -190,7 +190,7 @@ def list_scenarios() -> list: ...              # shape 4.7
 
 # core/notify.py  (Samridhi)
 def notify(kind: str, title: str, text: str, fields: dict | None = None) -> bool: ...
-#   kind ∈ {"kill_switch","root_cause","fix_verified","fix_rolled_back","mystery_reveal","report","gray_failure"}
+#   kind ∈ {"kill_switch","root_cause","fix_verified","fix_rolled_back","fix_rollback_failed","mystery_reveal","report","gray_failure"}  (8 kinds)
 #   reads DISCORD_WEBHOOK_URL from the environment; no URL -> return False silently; never raises; max 1 msg / 2 s.
 
 # core/mystery.py  (Artham)

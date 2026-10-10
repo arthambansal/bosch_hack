@@ -40,7 +40,7 @@ def remediator_node(state):
     if generated_fix:
         fixes.append(generated_fix)
 
-    banned = set(state.get("rolled_back", []))     # the Verifier proved these made things worse
+    banned = set(state.get("rolled_back", [])) | set(state.get("rollback_failed", []))     # the Verifier proved these made things worse
     new = [f for f in fixes if f["id"] not in {a["id"] for a in applied} | banned]
     for e in extras:
         LIVE.event("ai", f"[Remediator] manual recommendation: {e.get('problem')} -> {e.get('recommendation')}")

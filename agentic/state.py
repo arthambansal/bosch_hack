@@ -39,6 +39,7 @@ class ChaosState(TypedDict, total=False):
     fixes: list                  # applied catalog fixes [{id, file, why, rows[]}]
     recommendations: list        # manual suggestions, never auto-applied [{problem, recommendation}]
     fix_attempts: int
+    rollback_failed: list        # ids of fixes that made things worse but docker could not undo (still applied)
     rolled_back: list            # ids of fixes the Verifier undid because an RPN got worse (never re-applied)
     pending_fix: bool            # True = new fixes were just applied and must be verified
     verification: Optional[dict] # {compare[{id, failure_mode, rpn_before, rpn_after, reduction_pct}], improved, results[]}

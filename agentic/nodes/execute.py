@@ -143,6 +143,8 @@ def verify_node(state):
             LIVE.event("warn", "[Verifier] rollback: docker compose could not re-apply the kept fixes")
         for f in rolled:                              # tell people only AFTER the rollback has really finished (or failed)
             w = statuses[f["id"]]["worse"]
+            if not done:                              # the fix is STILL running: never publish it as rolled back
+                statuses[f["id"]] = {"status": "applied", "worse": w, "rollback_failed": True}
             if done:
                 _notify("fix_rolled_back", f"Fix rolled back: {f['id']}",
                         f"{f['id']} made {w['id']} worse (RPN {w['rpn_before']} -> {w['rpn_after']}), so ChaosPilot undid it.",
@@ -151,6 +153,9 @@ def verify_node(state):
                 _notify("fix_rollback_failed", f"Rollback FAILED: {f['id']}",
                         f"{f['id']} made {w['id']} worse but docker compose could not undo it. Check the sandbox by hand.",
                         {"fix": f["id"], "experiment": w["id"]})
+    elif rolled:                                      # STOP file present: nothing was undone, so do not claim it was
+        for f in rolled:
+            statuses[f["id"]] = {"status": "applied", "worse": statuses[f["id"]]["worse"], "rollback_failed": True}
     for f in kept:
         if statuses[f["id"]]["status"] == "verified":
             rows = [c for c in cmp if c["id"] in f.get("rows", [])]
@@ -158,6 +163,9 @@ def verify_node(state):
                     "; ".join(f"{c['id']} RPN {c['rpn_before']} -> {c['rpn_after']}" for c in rows),
                     {"fix": f["id"]})
 
+    failed = [f for f in rolled if statuses[f["id"]].get("rollback_failed")]      # still applied, could not be undone
+    rolled = [f for f in rolled if f not in failed]
+    kept = kept + failed
     improved = bool(kept) and all(statuses[f["id"]]["status"] == "verified" for f in kept)
     summary = {f["id"]: statuses[f["id"]]["status"] for f in fixes}
     save_json(os.path.join(run_dir(), "verification.json"), {"compare": cmp, "results": after, "fix_status": summary})
@@ -165,4 +173,5 @@ def verify_node(state):
     publish_fixes(fixes, statuses, cmp, state.get("investigations"), state["results"])
     return {"verification": {"compare": cmp, "improved": improved, "results": after, "fix_status": summary},
             "fixes": kept, "rolled_back": sorted(set(state.get("rolled_back", [])) | {f["id"] for f in rolled}),
+            "rollback_failed": sorted(set(state.get("rollback_failed", [])) | {f["id"] for f in failed}),
             "pending_fix": False}

@@ -260,8 +260,8 @@ def run_trial(choice_id, cfg, graph, offline=False, chosen_by="random"):
     if not items:
         raise RuntimeError("no mystery faults available for this config")
     item = _pick(items, choice_id)
-    st = _State(cfg, len(load_trials()) + 1)
     with _session(graph) as eng:
+        st = _State(cfg, len(load_trials()) + 1)          # after the session starts: starting a run clears old live evidence
         return _run_one(eng, cfg, graph, item, len(load_trials()) + 1, offline, chosen_by, st)
 
 
@@ -275,8 +275,8 @@ def run_trials(n, cfg, graph, offline=False, cooldown_s=None):
     while len(order) < n:
         order += random.sample(items, len(items))
     lines = []
-    st = _State(cfg, len(load_trials()))
     with _session(graph) as eng:
+        st = _State(cfg, len(load_trials()))
         for item in order[:n]:
             if os.path.exists(STOP_FILE):
                 break
@@ -301,24 +301,50 @@ def format_table(lines):
 
 
 # ------------------------------------------------------------------------------------------------ judge mode
-def _read_request(valid_ids):
-    """Consume runs/mystery_request.json. Returns a valid choice id, or None. A bad or used file is always removed."""
+def _read_request(valid_ids, st=None):
+    """Consume runs/mystery_request.json. Returns a valid choice id, or None. A bad or used file is always removed.
+
+    The claim happens while holding the SAME lock directory the dashboard takes before it accepts a request, and the
+    non-idle state is published (st.set) before that lock is released. So a second dashboard submission can never be
+    accepted between "request claimed" and "state is no longer idle"."""
+    lock = REQUEST_FILE.replace("mystery_request.json", "dashboard_mystery.lock")
     claimed = REQUEST_FILE + ".claimed"
+    held = False
+    deadline = time.monotonic() + 2
+    while not held:
+        try:
+            os.mkdir(lock)
+            held = True
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                return None                                   # the dashboard is mid-write; try again on the next poll
+            time.sleep(0.02)
+        except OSError:
+            return None
     try:
-        os.replace(REQUEST_FILE, claimed)             # atomic: only one reader can ever claim a request
-    except OSError:
-        return None
-    try:
-        with open(claimed) as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        data = {}
-    try:
-        os.remove(claimed)
-    except OSError:
-        pass
-    choice = data.get("choice_id") if isinstance(data, dict) else None
-    return choice if choice == "random" or choice in valid_ids else None
+        try:
+            os.replace(REQUEST_FILE, claimed)                 # atomic: only one reader can ever claim a request
+        except OSError:
+            return None
+        try:
+            with open(claimed) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        try:
+            os.remove(claimed)
+        except OSError:
+            pass
+        choice = data.get("choice_id") if isinstance(data, dict) else None
+        choice = choice if choice == "random" or choice in valid_ids else None
+        if choice is not None and st is not None:
+            st.set(state="injected")                          # not idle any more: the dashboard now answers 409
+        return choice
+    finally:
+        try:
+            os.rmdir(lock)
+        except OSError:
+            pass
 
 
 def wait_loop(cfg, graph, offline=False):
@@ -338,7 +364,7 @@ def wait_loop(cfg, graph, offline=False):
                 st.fresh(len(load_trials()) + 1, None, state="idle")
                 choice, by = None, None
                 while choice is None and not os.path.exists(STOP_FILE):
-                    choice, by = _read_request(valid), "judge"
+                    choice, by = _read_request(valid, st), "judge"
                     if choice is None:
                         line = _poll_terminal()
                         if line and (line == "random" or line in valid):
@@ -347,7 +373,8 @@ def wait_loop(cfg, graph, offline=False):
                         time.sleep(0.3)
                 if choice is None:
                     break
-                st.set(state="injected")                              # request claimed: the dashboard now refuses a 2nd pick (needs "idle")
+                if by != "judge":
+                    st.set(state="injected")                          # a terminal pick is not claimed under the lock; block dashboard picks too
                 try:
                     _run_one(eng, cfg, graph, _pick(items, choice), len(load_trials()) + 1, offline, by, st)
                 except RuntimeError as exc:

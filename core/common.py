@@ -133,6 +133,23 @@ class Live:
             self.state.update(kw)
         self.flush()
 
+    RUN_DEFAULTS = {"events": [], "queue": [], "guard": {}, "experiment": None, "score": None, "findings": None, "faulted": []}
+    RUN_KEYS = ("fixes", "fmea", "fmea_compare", "impact", "predictions", "plan_ranking", "threat_model", "memory",
+                "mystery", "regression", "truth")
+
+    def reset_run(self, baseline=None):
+        """Forget the previous run's evidence. Global catalogs (graph, thresholds, probes) stay."""
+        with self.lock:
+            for key, value in self.RUN_DEFAULTS.items():
+                self.state[key] = json.loads(json.dumps(value))
+            for key in self.RUN_KEYS:
+                self.state.pop(key, None)
+            if baseline is None:
+                self.state.pop("baseline", None)
+            else:
+                self.state["baseline"] = baseline
+        self.flush()
+
     def flush(self):
         with self.lock:
             snapshot = json.dumps(self.state)

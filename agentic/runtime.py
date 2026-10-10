@@ -2,7 +2,7 @@
 import os
 import time
 
-from core.common import LATEST_FILE, LIVE, RUNS_DIR, STOP_FILE, load_config
+from core.common import BASELINE_FILE, LATEST_FILE, LIVE, RUNS_DIR, STOP_FILE, load_config, load_json
 from core.engine import Engine
 from core.faults import panic
 from agentic.gate import GATE_SYNC
@@ -28,6 +28,7 @@ def start(graph):
     """Create the run folder and start background traffic. Call once before the graph runs."""
     d = os.path.join(RUNS_DIR, "auto_" + time.strftime("%Y%m%d_%H%M%S"))
     os.makedirs(d, exist_ok=True)
+    LIVE.reset_run(load_json(BASELINE_FILE, None))        # new run: drop the previous run's evidence, keep the saved baseline
     LIVE.log_path = os.path.join(d, "events.log")
     with open(LATEST_FILE, "w") as f:
         f.write(d)
