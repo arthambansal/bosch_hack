@@ -15,9 +15,11 @@ import ApprovalPanel from './components/ApprovalPanel.jsx';
 import { MysteryPanel, FixesPanel, MemoryPanel, PlanPanel, PredictionsPanel, ImpactPanel } from './components/P1Panels.jsx';
 import { Icon } from './components/ui.jsx';
 import ControlProvider from './components/ControlProvider.jsx';
+import HistoryPanel from './components/HistoryPanel.jsx';
+import RegressionPanel from './components/RegressionPanel.jsx';
 import { VIEWS } from './viewModel.js';
 import { TooltipScope } from './components/InfoTooltip.jsx';
-import { ViewHeading, ExperimentDetails, AgentGuide, DiagnosticsDetails, RecoveryDetails, HistoryPlaceholder } from './components/ControlRoomViews.jsx';
+import { ViewHeading, ExperimentDetails, AgentGuide, DiagnosticsDetails, RecoveryDetails } from './components/ControlRoomViews.jsx';
 
 export function DashboardWorkspace({ live }) {
   const [view, setView] = useState('overview');
@@ -31,8 +33,8 @@ export function DashboardWorkspace({ live }) {
     agents: <><ViewHeading title="Agents">Understand the reasoning, the safeguards, and the evidence each step publishes.</ViewHeading><AgentWorkflow state={state} connected={connected} /><div className="agents-grid"><AgentGuide state={state} /><DependencyMap state={state} connected={connected} /></div></>,
     experiments: <><ViewHeading title="Experiments">Intent, fault steps, reported outcomes, and observed signals.</ViewHeading><MysteryPanel live={live} /><div className="p1-grid"><PlanPanel plan={state.plan_ranking} /><ImpactPanel impact={state.impact} /></div><PredictionsPanel predictions={state.predictions} /><div className="observability-grid"><ExperimentDetails state={state} /><TelemetryPanel state={state} connected={connected} id="experiment-telemetry" /></div><ExperimentTimeline events={state.events} /></>,
     diagnostics: <><ViewHeading title="Diagnostics">Reported causes and measured risk, grounded in published evidence.</ViewHeading><MemoryPanel memory={state.memory} /><DiagnosticsDetails state={state} /><FixesPanel fixes={state.fixes} id="diagnostic-fixes-title" compact /></>,
-    recovery: <><ViewHeading title="Recovery">Follow backend cleanup and measured risk comparisons.</ViewHeading><div className="recovery-grid"><RecoveryDetails state={state} /><SafetyPanel state={state} connected={connected} id="recovery-controls" /></div><FixesPanel fixes={state.fixes} /></>,
-    history: <><ViewHeading title="History">A place for previous runs. Live controls remain attached to the current run.</ViewHeading><HistoryPlaceholder /></>,
+    recovery: <><ViewHeading title="Recovery">Follow backend cleanup and measured risk comparisons.</ViewHeading><div className="recovery-grid"><RecoveryDetails state={state} /><SafetyPanel state={state} connected={connected} id="recovery-controls" /></div><RegressionPanel value={state.regression} stale={live.source !== 'fixture' && (!connected || !Number.isFinite(live.received) || Date.now()-live.received>=2000)} /><FixesPanel fixes={state.fixes} /></>,
+    history: <><ViewHeading title="History">Recorded evidence. Global controls remain attached to the current live run.</ViewHeading><HistoryPanel active={view==='history'} fixture={live.source==='fixture'} /></>,
   };
   return <TooltipScope.Provider value={view}><WorkspaceShell live={live} view={view} onView={setView} approvalOpen={approvalOpen} onApproval={() => setApprovalOpen(previous => !previous)} approvalContent={<ApprovalPanel request={state.approval_request} phase={state.phase} connected={connected} />}>
     <div className="provenance-note"><Icon name="info" size={15} /><p><strong>{live.source === 'fixture' ? 'FIXTURE DATA — static demonstration snapshot.' : 'Snapshot data.'}</strong> Measurement provenance is not supplied. These values may come from mock runs and are not verified Docker measurements.</p></div>

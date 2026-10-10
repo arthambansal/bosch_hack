@@ -11,10 +11,13 @@ export const useControls = () => useContext(ControlContext);
 
 export default function ControlProvider({ live, children }) {
   const { state, status, refresh, received } = live;
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(timer); }, []);
+  const [, setHeartbeat] = useState(0);
+  useEffect(() => { const timer = setInterval(() => setHeartbeat(tick => tick + 1), 500); return () => clearInterval(timer); }, []);
+  // Poll receipts can arrive between heartbeats. Evaluate freshness with the
+  // current render time; the heartbeat only schedules expiry revalidation.
+  const now = Date.now();
   const connected = live.source !== 'fixture' && status === 'connected';
-  const fresh = connected && typeof received === 'number' && now - received < 2000;
+  const fresh = connected && Number.isFinite(received) && now >= received && now - received < 2000;
   // The adapter, not experiment id/name or an invented state field, must
   // validate and extract an authoritative gate/run identity.
   const stopRequested = useRef(false);

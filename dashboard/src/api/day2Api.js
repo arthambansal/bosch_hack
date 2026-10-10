@@ -1,5 +1,5 @@
 import { ControlRequestError } from './controlApi.js';
-const validRun = name => typeof name === 'string' && /^auto_\d{8}_\d{6}$/.test(name);
+import { validRunName as validRun } from '../historyModel.js';
 export function mysteryContext(live, now = Date.now(), stopRequested = false) {
   const mystery = live?.state?.mystery;
   if (stopRequested || live?.source === 'fixture' || live?.status !== 'connected'

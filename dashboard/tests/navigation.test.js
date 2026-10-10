@@ -76,7 +76,7 @@ test('workspace keeps six panels mounted with unique IDs and no fabricated findi
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length);
   assert.match(html, /Not available/);
-  assert.match(html, /History browsing is not enabled yet/);
+  assert.match(html, /Open History to load recorded runs/);
   assert.match(html, /not verified Docker measurements/);
   assert.match(html, /Hypothesis · not an observed result/);
   assert.equal((html.match(/id="approval-title"/g) || []).length, 1);
