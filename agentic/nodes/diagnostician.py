@@ -304,18 +304,205 @@ def diagnostician_node(state):
 
 
 # ---------------------------------------------------------------- Day 2 interfaces (Dipen) — DAY2_CONTRACT.md 4.2, 4.3, 5
-# STUBS. Replace the bodies, keep the signatures.
+_BLIND_TIMINGS = {}
 def diagnose_blind(res, cfg, graph, offline=False):
     """Name the hidden fault and target from evidence only. `res` is redacted (no name/steps/faults_injected/...)."""
-    import time as _t
-    t0 = _t.time()
-    stuck = list(res.get("stuck_services") or [])
-    target = stuck[0] if stuck else "redis"
-    guess = {"fault": "kill", "target": target, "confidence": 0.2}
-    return {**guess, "top3": [guess], "root_cause": "stub guess: blind diagnosis not implemented yet",
-            "evidence": [], "memory_hit": False, "seconds": round(_t.time() - t0, 3)}
+    import time
+    from core.analysis_tools import blind_candidates
+    from core.contract_v5 import validate_guess
+    t0 = time.perf_counter()
+    incident = res.get("id")
+    # Whitelist rather than copying the result: injection fields are never read.
+    safe = {key: res.get(key) for key in ("probes", "delivery", "stuck_services", "stuck_details", "recovery_s")}
+    safe["id"] = "blind-incident"
+    original = res.get("observation") or load_observation(incident) or {}
+    if original.get("experiment") != incident:
+        original = {}
+    observation = {key: original.get(key) for key in ("probe_error_rate", "queue_depth", "mttr_s",
+        "events", "new_log_templates", "delivery", "mttd_s", "t_start", "t_end") if key in original}
+    observation["experiment"] = safe["id"]
+    safe["observation"] = observation
+    measured = dict(observation)
+    rates = dict(observation.get("probe_error_rate") or {})
+    rates.update({name: values["error_rate"] for name, values in (safe.get("probes") or {}).items()
+                  if values.get("error_rate") is not None})
+    measured["probe_error_rate"] = rates
+    features = extract_features(measured)
+    tools = make_tools(cfg, graph)
+    try:
+        states = json.loads(tools["list_containers"].run({}))
+        if not isinstance(states, dict):
+            states = {}
+    except (KeyError, ValueError, TypeError):
+        states = {}
+    candidates = blind_candidates(safe, observation, states, cfg, graph)
+    if not candidates:
+        LIVE.set(memory={"last_hit": None, "signatures": 0})
+        return None  # no configured service: cannot manufacture a valid target
+    memory = None
+    signature_count = 0
+    try:
+        if DEFAULT_PATH.exists():
+            with KnowledgeStore() as store:
+                signatures = store.signatures()
+                signature_count = len(signatures)
+                matches = store.similar_signatures(features, limit=max(1, len(signatures)))
+                viable = []
+                for match in matches:
+                    signature = match["signature"]
+                    if signature["from"] == incident or match["similarity"] < 0.8:
+                        continue
+                    source = store.get_observation(signature["from"])
+                    if not source:
+                        continue
+                    shared = features.keys() & signature["features"].keys()
+                    if len(shared) < 3 or any(features[k] != signature["features"][k] for k in shared):
+                        continue
+                    experiment = store.get_experiment(signature["from"])
+                    steps = ((experiment or {}).get("spec") or {}).get("steps") or []
+                    target = steps[0].get("target") if len(steps) == 1 else None
+                    if target is None:
+                        roles = [name for name, service in cfg.get("services", {}).items()
+                                 if service.get("role") == signature["fault"]["target_role"]]
+                        target = roles[0] if len(roles) == 1 else None
+                    if target not in cfg.get("services", {}) or signature["fault"]["type"] not in (
+                            "kill", "pause", "partition", "latency", "spike"):
+                        continue
+                    viable.append((match, target, experiment, store.diagnosis_duration(signature["id"])))
+                identities = {(m["signature"]["fault"]["type"], target) for m, target, _, _ in viable}
+                if len(identities) == 1:
+                    best = viable[0]
+                    pair = (best[0]["signature"]["fault"]["type"], best[1])
+                    # Do not override strong contradictory current evidence.
+                    if candidates[0]["confidence"] < 0.6 or pair == (candidates[0]["fault"], candidates[0]["target"]):
+                        memory = best
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        LIVE.event("warn", "[Diagnostician] blind memory unavailable; using measured evidence")
+    source = "rules"
+    guess = {key: candidates[0][key] for key in ("fault", "target", "confidence")}
+    guess.update(top3=[{key: c[key] for key in ("fault", "target", "confidence")} for c in candidates],
+        root_cause="Evidence-ranked hypothesis; these weights are not calibrated probabilities. "
+                   "The precise mechanism needs confirmation.",
+        evidence=list(dict.fromkeys(fact for c in candidates for fact in c["evidence"]))[:8], memory_hit=False)
+    if memory:
+        match, target, experiment, previous_seconds = memory
+        signature = match["signature"]
+        pair = {"fault": signature["fault"]["type"], "target": target, "confidence": match["similarity"]}
+        guess = {**pair, "top3": [pair], "root_cause": "Historical match: " + signature["root_cause"][:300],
+                 "evidence": [f"Past signature {signature['id']}; similarity={match['similarity']}; "
+                              f"compared features={','.join(match['compared_features'])}; not current confirmation"],
+                 "memory_hit": True}
+        source = "memory"
+    elif candidates[0]["confidence"] < 0.6 and not offline:
+        schema = {"fault": "kill|pause|partition|latency|spike", "target": "configured service",
+                  "confidence": "number 0..1", "top3": [{"fault": "type", "target": "service", "confidence": 0.3}],
+                  "root_cause": "evidence-backed hypothesis with limitations", "evidence": ["quoted measurement"]}
+        context = reasoning_context(safe, graph, observation)
+        context.pop("injected_action", None)
+        context["container_state"] = states
+        context["candidates"] = candidates
+        agent = ReActAgent("BlindDiagnostician", "an SRE diagnosing an unknown fault from measurements only. "
+            "You do not know the injection. Rank fault/target pairs, cite actual evidence, and state uncertainty. "
+            "Post-restoration state does not prove fault-window health. Never read files or injection metadata.",
+            tools, schema, max_steps=5, offline=False, starters=[("list_containers", {})])
+        try:
+            answer, trace = agent.run("Identify the fault and target from this blind evidence packet.", context)
+            checked = _validated_blind_guess(answer, cfg)
+            if checked:
+                guess, source = checked, "ai"
+        except Exception as exc:
+            LIVE.event("warn", f"[Diagnostician] blind AI unavailable ({type(exc).__name__}); using evidence ranking")
+    seconds = time.perf_counter() - t0
+    guess["seconds"] = round(seconds, 6)
+    if memory:
+        match, target, experiment, previous_seconds = memory
+        LIVE.set(memory={"signatures": signature_count, "last_hit": {"experiment": incident,
+            "signature_id": match["signature"]["id"], "similarity": match["similarity"],
+            "seen_in_run": (experiment or {}).get("run_id"), "root_cause": guess["root_cause"],
+            "saved_s": previous_seconds - seconds if previous_seconds is not None else None}})
+    else:
+        LIVE.set(memory={"last_hit": None, "signatures": signature_count})
+    if len(_BLIND_TIMINGS) >= 100:
+        _BLIND_TIMINGS.pop(next(iter(_BLIND_TIMINGS)))
+    _BLIND_TIMINGS[incident] = {"seconds": seconds, "source": source}
+    return guess if not validate_guess(guess, cfg.get("services") or {}) else None
+
+
+def _validated_blind_guess(answer, configuration):
+    """Validate every ranked pair, not just the permissive shared validator."""
+    import math
+    from core.contract_v5 import validate_guess
+    if not isinstance(answer, dict):
+        return None
+    guess = {key: answer.get(key) for key in ("fault", "target", "confidence", "top3", "root_cause", "evidence")}
+    guess["memory_hit"] = False
+    try:
+        if validate_guess(guess, configuration.get("services") or {}):
+            return None
+        if not isinstance(guess["root_cause"], str) or len(guess["root_cause"].strip()) < 25:
+            return None
+        if not guess["evidence"] or not all(isinstance(fact, str) and fact.strip() for fact in guess["evidence"]):
+            return None
+        seen = set()
+        for item in guess["top3"]:
+            pair = (item["fault"], item["target"])
+            confidence = item["confidence"]
+            if pair[0] not in ("kill", "pause", "partition", "latency", "spike") or pair[1] not in configuration.get("services", {}):
+                return None
+            if pair in seen or type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                return None
+            seen.add(pair)
+        if (guess["fault"], guess["target"]) != (guess["top3"][0]["fault"], guess["top3"][0]["target"]):
+            return None
+        if guess["confidence"] != guess["top3"][0]["confidence"]:
+            return None
+        weights = [item["confidence"] for item in guess["top3"]]
+        if weights != sorted(weights, reverse=True) or not math.isclose(sum(weights), 1.0, abs_tol=0.01):
+            return None
+        return guess
+    except (TypeError, KeyError, ValueError):
+        return None
 
 
 def remember_confirmed(res, fault, root_cause):
-    """Save a confirmed failure signature (called after a mystery reveal or a verified fix). STUB: does nothing."""
+    """Remember a revealed fault; no claim that reveal proves a deeper mechanism."""
+    import hashlib
+    from core.signatures import build_signature
+    try:
+        configuration = cfg()
+        target = fault.get("target")
+        kind = fault.get("fault", fault.get("type"))
+        role = (configuration.get("services") or {}).get(target, {}).get("role")
+        if kind not in ("kill", "pause", "partition", "latency", "spike") or not role or not res.get("id"):
+            raise ValueError("invalid revealed fault or source incident")
+        observation = res.get("observation") or load_observation(res["id"])
+        if not observation or observation.get("experiment") != res["id"]:
+            raise ValueError("a matching measured observation is required")
+        cause = f"Revealed {kind} on {target}. Diagnosis hypothesis (mechanism not independently confirmed): {str(root_cause)[:300]}"
+        signature = build_signature(observation, signature_id="pending", fault={"type": kind, "target_role": role},
+                                    root_cause=cause, confirmed=True)
+        # Repeated model wording must not create duplicates of the same case.
+        identity = {"fault": signature["fault"], "target": target, "features": signature["features"]}
+        signature["id"] = "S-mystery-" + hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
+        with KnowledgeStore() as store:
+            if any(s["id"] == signature["id"] for s in store.signatures()):
+                return None
+            # Keep original artifact fields. Reveal supplies the missing experiment label.
+            spec = dict(res)
+            spec["steps"] = [{"type": kind, "target": target}]
+            run = LIVE.state.get("run_dir")
+            with store.connection:
+                existing = store.get_observation(res["id"])
+                if existing and existing != observation:
+                    raise ValueError("source observation ID already belongs to different evidence")
+                store.save_observation(observation)
+                store.save_experiment(spec, str(run or "unknown"))
+                store.save_signature(signature)
+                timing = _BLIND_TIMINGS.get(res["id"])
+                if timing and timing["source"] == "ai":
+                    store.record_diagnosis_duration(signature["id"], timing["seconds"])
+            count = len(store.signatures())
+        LIVE.set(memory={"last_hit": None, "signatures": count})
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError) as exc:
+        LIVE.event("warn", f"[Diagnostician] revealed case not stored ({type(exc).__name__})")
     return None

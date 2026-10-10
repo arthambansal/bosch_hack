@@ -20,15 +20,20 @@ def make_tools(cfg, graph):
 
     def list_containers():
         out = {}
-        fmt = "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{.HostConfig.RestartPolicy.Name}}"
+        fmt = "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{.HostConfig.RestartPolicy.Name}}|{{json .NetworkSettings.Networks}}"
         for name, svc in services.items():
             ok, txt = docker("inspect", "-f", fmt, svc["container"])
             if not ok:
                 out[name] = {"status": "missing"}
                 continue
-            status, code, restarts, policy = (txt.strip().split("|") + ["", "", "", ""])[:4]
+            status, code, restarts, policy, networks = (txt.strip().split("|") + ["", "", "", "", ""])[:5]
+            try:
+                attached = json.loads(networks)
+                connected = cfg["network"] in attached if isinstance(attached, dict) and cfg.get("network") else None
+            except (ValueError, TypeError):
+                connected = None
             out[name] = {"status": status, "exit_code": code, "restart_count": restarts,
-                         "restart_policy": policy or "no"}
+                         "restart_policy": policy or "no", "network_connected": connected}
         return out
 
     def container_logs(service, lines=30):

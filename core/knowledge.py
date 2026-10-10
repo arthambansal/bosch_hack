@@ -44,10 +44,32 @@ class KnowledgeStore:
             CREATE TABLE IF NOT EXISTS verifications (
                 fix_id TEXT PRIMARY KEY, json TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS profiles (
+                metric TEXT NOT NULL, window TEXT NOT NULL, mean REAL,
+                std REAL, p50 REAL, p95 REAL, p99 REAL,
+                UNIQUE(metric, window)
+            );
         ''')
 
     def close(self):
         self.connection.close()
+
+    def get_experiment(self, experiment_id):
+        row = self.connection.execute("SELECT spec_json, run_id FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
+        return {"spec": json.loads(row[0]), "run_id": row[1]} if row else None
+
+    def record_diagnosis_duration(self, signature_id, seconds):
+        import math
+        if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0:
+            raise ValueError("diagnosis duration must be a measured nonnegative number")
+        with self.connection:
+            self.connection.execute("INSERT OR REPLACE INTO profiles VALUES (?, ?, ?, NULL, NULL, NULL, NULL)",
+                                    ("diagnosis_seconds", signature_id, seconds))
+
+    def diagnosis_duration(self, signature_id):
+        row = self.connection.execute("SELECT mean FROM profiles WHERE metric = ? AND window = ?",
+                                      ("diagnosis_seconds", signature_id)).fetchone()
+        return row[0] if row else None
 
     def __enter__(self):
         return self

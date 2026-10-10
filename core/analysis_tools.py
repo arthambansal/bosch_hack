@@ -55,6 +55,81 @@ def dependency_map(graph):
     return deps
 
 
+def blind_candidates(result, observation, states, configuration, graph):
+    """Rank measured fault/target clues. Weights are heuristics, not accuracy.
+
+    Reads no injection labels; ambiguous evidence deliberately retains alternatives.
+    """
+    faults = ("kill", "pause", "partition", "latency", "spike")
+    services = configuration.get("services") or {}
+    scores = {(fault, target): 0.05 for target in sorted(services) for fault in faults}
+    evidence = {pair: [] for pair in scores}
+
+    def add(fault, target, weight, fact):
+        pair = (fault, target)
+        if pair in scores:
+            scores[pair] += weight
+            evidence[pair].append(fact)
+
+    events = observation.get("events") or []
+    deaths = [e for e in events if e.get("event") in ("die", "kill")]
+    earliest = min((e.get("t", 0) for e in deaths), default=None)
+    for event in events:
+        target, action = event.get("service"), event.get("event")
+        fault = {"die": "kill", "kill": "kill", "pause": "pause", "disconnect": "partition"}.get(action)
+        if fault:
+            weight = 12 if fault != "kill" or event.get("t", 0) == earliest else 3
+            add(fault, target, weight, f"Observer: {target} {action} at {event.get('t')}; exit={event.get('exit_code')}")
+    for target, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        status = str(state.get("status", "")).lower()
+        if state.get("paused") is True or status == "paused":
+            add("pause", target, 12, f"Container {target} is paused at inspection")
+        elif status in ("exited", "dead", "missing") or state.get("running") is False:
+            add("kill", target, 5, f"Container {target} stopped at inspection; exit={state.get('exit_code')}")
+        if state.get("network_connected") is False:
+            add("partition", target, 12, f"Container {target} has no measured network connection")
+    for target in result.get("stuck_services") or []:
+        detail = (result.get("stuck_details") or {}).get(target) or {}
+        add("kill", target, 2, f"{target} stopped after experiment; exit={detail.get('exit_code')}; onset unknown")
+    deps = dependency_map(graph)
+    entries = {p['name']: p.get('entry') for p in configuration.get('probes', [])}
+    for name, probe in (result.get("probes") or {}).items():
+        entry = entries.get(name)
+        impacted, pending = set(), [entry] if entry else []
+        while pending:
+            target = pending.pop()
+            if target not in impacted:
+                impacted.add(target)
+                pending.extend(deps.get(target, ()))
+        rate, latency = probe.get("error_rate"), probe.get("p95_ms")
+        for target in impacted:
+            if type(rate) in (int, float) and rate > 0:
+                for fault in ("kill", "pause", "partition"):
+                    add(fault, target, 1, f"{name}: measured error_rate={rate}; dependency path includes {target}")
+            if type(latency) in (int, float) and latency > 250:
+                for fault in ("latency", "pause", "partition"):
+                    add(fault, target, 1 if rate else 3, f"{name}: p95={latency}ms; slow response is not a unique mechanism")
+    # Explicit recorded mechanism logs, not the injected fault name.
+    logs = dict(observation.get("new_log_templates") or {})
+    for target, detail in (result.get("stuck_details") or {}).items():
+        logs[target] = list(logs.get(target) or []) + list(detail.get("last_logs") or [])
+    for target, lines in logs.items():
+        text = " ".join(str(line) for line in lines).lower()
+        if any(word in text for word in ("name or service not known", "getaddrinfo", "enotfound")):
+            add("partition", target, 3, f"{target} has a recorded DNS-resolution error; dependency loss remains possible")
+        if "timeout" in text or "timed out" in text:
+            for fault in ("pause", "partition", "latency"):
+                add(fault, target, 1, f"{target} recorded a timeout; mechanism ambiguous")
+        if "rate limit" in text or "too many requests" in text:
+            add("spike", target, 2, f"{target} recorded rate limiting; traffic volume is not established")
+    ranked = sorted(scores, key=lambda pair: (-scores[pair], pair))[:3]
+    total = sum(scores[pair] for pair in ranked)
+    return [{"fault": pair[0], "target": pair[1], "confidence": scores[pair] / total,
+             "evidence": evidence[pair]} for pair in ranked]
+
+
 def localize(graph, anomalous_services):
     """Find deepest observed anomalies, while marking dependency health unknown.
 
