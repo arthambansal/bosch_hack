@@ -84,7 +84,7 @@ def publish_fixes(fixes, statuses, cmp, investigations=None, results=()):
     from core.heal import fix_entries
     from core.patches import suggest_patches
     by_row = {c["id"]: c for c in cmp}
-    entries = fix_entries(fixes)
+    entries = fix_entries([{**f, "status": "applied"} for f in fixes])   # state fixes carry no status; fix_entries only lists applied ones
     for e in entries:
         e["status"] = (statuses.get(e["id"]) or {}).get("status", e.get("status", "applied"))
         e["rpn"] = [{"id": r, "before": by_row[r]["rpn_before"], "after": by_row[r]["rpn_after"]}
