@@ -1,0 +1,143 @@
+{
+  "generated_at": "2026-10-10 14:20:02",
+  "app": "Docker Example Voting App",
+  "repo": "https://github.com/dockersamples/example-voting-app",
+  "network": "chaosnet",
+  "services": {
+    "vote": {
+      "container": "chaos-vote",
+      "role": "entrypoint",
+      "stateful": false,
+      "running": true,
+      "image": "dockersamples/examplevotingapp_vote",
+      "listen_ports": [
+        80,
+        46247
+      ],
+      "depends_on": [
+        "redis"
+      ],
+      "used_by": [],
+      "level": 0,
+      "blast_radius": []
+    },
+    "result": {
+      "container": "chaos-result",
+      "role": "entrypoint",
+      "stateful": false,
+      "running": true,
+      "image": "dockersamples/examplevotingapp_result",
+      "listen_ports": [
+        32945
+      ],
+      "depends_on": [
+        "db"
+      ],
+      "used_by": [],
+      "level": 0,
+      "blast_radius": []
+    },
+    "worker": {
+      "container": "chaos-worker",
+      "role": "consumer",
+      "stateful": false,
+      "running": true,
+      "image": "dockersamples/examplevotingapp_worker",
+      "listen_ports": [
+        36577
+      ],
+      "depends_on": [
+        "db",
+        "redis"
+      ],
+      "used_by": [],
+      "level": 0,
+      "blast_radius": []
+    },
+    "redis": {
+      "container": "chaos-redis",
+      "role": "queue",
+      "stateful": true,
+      "running": true,
+      "image": "redis:7.2-alpine",
+      "listen_ports": [
+        6379,
+        44521
+      ],
+      "depends_on": [],
+      "used_by": [
+        "vote",
+        "worker"
+      ],
+      "level": 1,
+      "blast_radius": [
+        "vote",
+        "worker"
+      ]
+    },
+    "db": {
+      "container": "chaos-db",
+      "role": "database",
+      "stateful": true,
+      "running": true,
+      "image": "postgres:15-alpine",
+      "listen_ports": [
+        5432,
+        38069
+      ],
+      "depends_on": [],
+      "used_by": [
+        "result",
+        "worker"
+      ],
+      "level": 1,
+      "blast_radius": [
+        "result",
+        "worker"
+      ]
+    }
+  },
+  "edges": [
+    {
+      "from": "result",
+      "to": "db",
+      "evidence": [
+        "declared",
+        "manual",
+        "observed"
+      ]
+    },
+    {
+      "from": "vote",
+      "to": "redis",
+      "evidence": [
+        "declared",
+        "manual"
+      ]
+    },
+    {
+      "from": "worker",
+      "to": "db",
+      "evidence": [
+        "declared",
+        "manual",
+        "observed"
+      ]
+    },
+    {
+      "from": "worker",
+      "to": "redis",
+      "evidence": [
+        "declared",
+        "manual",
+        "observed"
+      ]
+    }
+  ],
+  "data_flows": [
+    "vote -> redis",
+    "result -> db",
+    "worker -> db",
+    "worker -> redis"
+  ]
+}
