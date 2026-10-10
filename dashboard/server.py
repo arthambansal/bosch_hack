@@ -7,9 +7,13 @@ import json
 import math
 import os
 import sys
+import re
+import tempfile
+from datetime import datetime
+from pathlib import Path
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -59,6 +63,116 @@ def approval_error(payload, snapshot, now=None):
     return None
 
 
+def runs_root():
+    return Path(ROOT) / "runs"
+
+
+def run_started_at(name):
+    # Runtime's name is authoritative local calendar time, not UTC or file mtime.
+    if not isinstance(name, str) or not re.fullmatch(r"auto_\d{8}_\d{6}", name):
+        raise ValueError("invalid run")
+    try:
+        return datetime.strptime(name[5:], "%Y%m%d_%H%M%S").isoformat()
+    except ValueError:
+        raise ValueError("invalid run") from None
+
+
+def safe_run(name):
+    run_started_at(name)
+    root = runs_root()
+    path = root / name
+    if root.is_symlink() or root.resolve() != root.absolute() or path.is_symlink() or path.resolve() != path.absolute():
+        raise ValueError("invalid run")
+    return path
+
+
+def safe_artifact(folder, filename):
+    path = folder / filename
+    if path.is_symlink() or path.resolve() != path.absolute():
+        raise ValueError("invalid artifact")
+    return path
+
+
+def run_summaries():
+    root = runs_root()
+    if root.is_symlink() or root.resolve() != root.absolute():
+        raise ValueError("invalid runs directory")
+    if not root.exists():
+        return []
+    summaries = []
+    for entry in root.iterdir():
+        try:
+            folder = safe_run(entry.name)
+            if not folder.is_dir():
+                continue
+            try:
+                has_report = safe_artifact(folder, "report.md").is_file()
+            except ValueError:
+                has_report = False
+            summaries.append({"name": entry.name, "started_at": run_started_at(entry.name), "has_report": has_report})
+        except ValueError:
+            continue
+    return sorted(summaries, key=lambda row: row["started_at"], reverse=True)
+
+
+def mystery_submission(payload):
+    """Serialize dashboard writers across processes; the consumer owns removal.
+
+    No stale lock takeover: a crashed writer requires operator inspection.
+    The consumer has no shared lifecycle lock, so this cannot claim a trial token.
+    """
+    root = runs_root()
+    request = root / "mystery_request.json"
+    lock = root / "dashboard_mystery.lock"
+    acquired = False
+    temporary = None
+    try:
+        root.mkdir(exist_ok=True)
+        if root.is_symlink() or root.resolve() != root.absolute():
+            return 500, {"error": "mystery_write_failed"}
+        deadline = time.monotonic() + 5
+        while not acquired:
+            try:
+                lock.mkdir()
+                acquired = True
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    return 503, {"error": "mystery_busy"}
+                time.sleep(0.02)
+        snapshot = load_state()
+        mystery = snapshot.get("mystery")
+        if not isinstance(mystery, dict) or mystery.get("state") != "idle" or os.path.exists(STOP) or snapshot.get("run_status") in {"stopping", "stopped"}:
+            return 409, {"error": "not_idle"}
+        if os.path.lexists(request):
+            return 409, {"error": "already_requested"}
+        choice = payload.get("choice_id")
+        menu = mystery.get("menu")
+        valid = {item.get("id") for item in menu if isinstance(item, dict) and isinstance(item.get("id"), str)} if isinstance(menu, list) else set()
+        if not isinstance(choice, str) or (choice != "random" and choice not in valid):
+            return 400, {"error": "unknown_choice"}
+        descriptor, temporary = tempfile.mkstemp(prefix=".mystery_request-", suffix=".tmp", dir=root)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump({"choice_id": choice, "by": "dashboard", "submitted_at": time.time()}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, request)
+        temporary = None
+        return 202, {"accepted": True}
+    except OSError:
+        return 500, {"error": "mystery_write_failed"}
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        if acquired:
+            try:
+                lock.rmdir()
+            except OSError:
+                pass
+
+
 class Handler(BaseHTTPRequestHandler):
     def json_reply(self, status, body):
         encoded = json.dumps(body).encode("utf-8")
@@ -82,6 +196,20 @@ class Handler(BaseHTTPRequestHandler):
             if origin.scheme != "http" or origin.hostname not in LOCAL_HOSTS or origin.port not in allowed_ports or origin.username or origin.password or origin.path or origin.query or origin.fragment:
                 return False
             return self.headers.get("Sec-Fetch-Site") not in {"cross-site"}
+        except ValueError:
+            return False
+
+    def local_history(self):
+        # Same-origin GET fetches may omit Origin. When present, validate it
+        # through the existing mutation policy; always validate peer and Host.
+        if self.headers.get("Origin") is not None:
+            return self.local_mutation()
+        try:
+            host = urlsplit("http://" + self.headers.get("Host", ""))
+            return (ipaddress.ip_address(self.client_address[0]).is_loopback
+                    and host.hostname in LOCAL_HOSTS and host.port == self.server.server_port
+                    and not any((host.username, host.password, host.path, host.query, host.fragment))
+                    and self.headers.get("Sec-Fetch-Site") != "cross-site")
         except ValueError:
             return False
 
@@ -112,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
-        if path not in {"/approve", "/stop"}:
+        if path not in {"/approve", "/stop", "/mystery"}:
             self.json_reply(404, {"error": "not_found"})
             return
         if not self.local_mutation():
@@ -120,6 +248,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         payload = self.read_payload()
         if payload is None:
+            return
+        if path == "/mystery":
+            status, body = mystery_submission(payload)
+            self.json_reply(status, body)
             return
         if path == "/approve":
             if type(payload.get("approved")) is not bool:
@@ -152,6 +284,40 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/state":
             self.json_reply(200, load_state())
+            return
+        if path == "/runs" or path.startswith("/runs/"):
+            if not self.local_history():
+                self.json_reply(403, {"error": "local_origin_required"})
+                return
+            try:
+                if path == "/runs":
+                    self.json_reply(200, run_summaries())
+                    return
+                # Decode before splitting; encoded slash/backslash/dots cannot
+                # bypass name validation. A second encoded layer fails regex.
+                parts = unquote(path).split("/")
+                if len(parts) != 4 or parts[3] not in {"report", "events"}:
+                    raise ValueError("invalid run path")
+                folder = safe_run(parts[2])
+                artifact = safe_artifact(folder, "report.md" if parts[3] == "report" else "events.log")
+                text = artifact.read_text(encoding="utf-8")
+                if parts[3] == "events":
+                    self.json_reply(200, {"lines": text.splitlines()})
+                else:
+                    body = text.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(body)
+            except ValueError:
+                self.json_reply(400, {"error": "invalid_run"})
+            except FileNotFoundError:
+                self.json_reply(404, {"error": "not_found"})
+            except (OSError, UnicodeError):
+                self.json_reply(500, {"error": "run_read_failed"})
             return
         if path != "/":
             self.json_reply(404, {"error": "not_found"})

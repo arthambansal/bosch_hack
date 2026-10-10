@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTROL_CONTRACTS, createControlApi, pendingGateContext } from '../src/api/controlApi.js';
+import { CONTROL_CONTRACTS, createControlApi, pendingGateContext, liveApprovalContext } from '../src/api/controlApi.js';
 
 // These adapters are test doubles. The opaque body and acknowledgement below
 // define no production gate identity, HTTP payload, or response schema.
@@ -14,11 +14,11 @@ function fixtureAdapter(overrides = {}) {
   };
 }
 
-test('approval stays blocked and STOP requires an authoritative active run', async t => {
+test('approval without a valid synchronized gate and STOP without an active run stay blocked', async t => {
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => { calls += 1; });
   const api = createControlApi();
-  assert.equal(CONTROL_CONTRACTS.approval, null);
+  assert.equal(CONTROL_CONTRACTS.approval.verified, true);
   assert.equal(CONTROL_CONTRACTS.stop.verified, true);
   assert.equal(api.getApprovalContext({ approval_request: { id: 'experiment-id' } }), null);
   assert.equal(api.getStopContext({ phase: 'running', run_dir: 'run' }), null);
@@ -50,7 +50,7 @@ test('real STOP adapter rejects an unconfirmed response even if HTTP succeeds', 
 });
 
 test('pending gate checks use real gate_id and expiry, not reusable experiment ids', () => {
-  const state = { run_status: 'running', agent_active: 'human', approval_request: { gate_id: 'unique-gate', id: 'E6', created_at: 99, expires_at: 110 } };
+  const state = { gate_sync: { version: 1 }, run_status: 'running', agent_active: 'human', approval_request: { gate_id: 'unique-gate', id: 'E6', created_at: 99, expires_at: 110 } };
   assert.equal(pendingGateContext(state, 100).key, 'unique-gate');
   assert.equal(pendingGateContext(state, 110), null);
   assert.equal(pendingGateContext({ ...state, run_status: 'stopping' }, 100), null);
@@ -119,4 +119,67 @@ test('server failure can have an uncertain outcome and must not invite a blind r
   t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 500 }));
   const api = createControlApi({ stop: fixtureAdapter() });
   await assert.rejects(api.requestStop({ key: 'test-scope' }, { confirmed: true }), error => error.status === 500 && error.uncertain === true);
+});
+
+function liveGate() {
+  const now = Date.now();
+  return { status: 'connected', received: now, state: { gate_sync: { version: 1 }, run_status: 'running', agent_active: 'human', approval_request: { gate_id: 'live-token', created_at: now / 1000 - 1, expires_at: now / 1000 + 60 } } };
+}
+
+test('real approval and denial send the exact token and verify acknowledgement', async t => {
+  const bodies = [];
+  t.mock.method(globalThis, 'fetch', async (path, options) => {
+    assert.equal(path, '/approve');
+    bodies.push(JSON.parse(options.body));
+    return Response.json({ ok: true, gate_id: 'live-token' });
+  });
+  const api = createControlApi(), context = liveApprovalContext(liveGate());
+  await api.approve(context);
+  await api.deny(context);
+  assert.deepEqual(bodies, [{ gate_id: 'live-token', approved: true }, { gate_id: 'live-token', approved: false }]);
+});
+
+test('each manual attempt requires fresh synchronized pending gate evidence', () => {
+  const live = liveGate(), now = Date.now();
+  assert.equal(liveApprovalContext(live).gate_id, 'live-token');
+  assert.equal(liveApprovalContext(live, true), null);
+  assert.equal(liveApprovalContext({ ...live, status: 'disconnected' }), null);
+  assert.equal(liveApprovalContext({ ...live, received: now - 2000 }, false, now), null);
+  for (const run_status of ['stopping', 'stopped', 'completed']) assert.equal(liveApprovalContext({ ...live, state: { ...live.state, run_status } }), null);
+  for (const gate_sync of [undefined, { version: 2 }, { version: '1' }]) assert.equal(liveApprovalContext({ ...live, state: { ...live.state, gate_sync } }), null);
+  live.state.approval_request.expires_at = now / 1000;
+  assert.equal(liveApprovalContext(live, false, now), null);
+});
+
+test('503 contention makes exactly one attempt and allows an explicit revalidated retry', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return calls === 1 ? Response.json({ error: 'gate_sync_unavailable' }, { status: 503 }) : Response.json({ ok: true, gate_id: 'live-token' });
+  });
+  const api = createControlApi(), live = liveGate();
+  await assert.rejects(api.approve(liveApprovalContext(live)), error => error.status === 503 && !error.uncertain && /manually/.test(error.message));
+  assert.equal(calls, 1);
+  await api.approve(liveApprovalContext(live));
+  assert.equal(calls, 2);
+});
+
+test('duplicate/stale rejection is not retried and incorrect acknowledgement is uncertain', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return Response.json({ error: 'already_decided' }, { status: 409 }); });
+  const api = createControlApi(), context = liveApprovalContext(liveGate());
+  await assert.rejects(api.approve(context), error => error.status === 409 && !error.uncertain);
+  assert.equal(calls, 1);
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ ok: true, gate_id: 'old-token' }));
+  await assert.rejects(api.approve(context), error => error.uncertain === true);
+});
+
+test('expired context sends nothing and an uncertain approval sends only once', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw new Error('lost'); });
+  const api = createControlApi(), context = liveApprovalContext(liveGate());
+  await assert.rejects(api.approve({ ...context, expires_at: 1 }), /expired/);
+  assert.equal(calls, 0);
+  await assert.rejects(api.approve(context), error => error.uncertain === true);
+  assert.equal(calls, 1);
 });
