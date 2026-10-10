@@ -86,7 +86,9 @@ def cmd_autopilot(a, cfg):
     rep = final.get("report") or {}
     print(f"\nResilience score: {rep.get('resilience_score')}/100 (grade {rep.get('grade')})"
           + (f" -> after fixes {rep.get('after')}/100" if rep.get("after") is not None else ""))
-    print(f"Report: {rep.get('path_md')}")
+    if rep.get("fix_table"):
+        print("\n" + rep["fix_table"])
+    print(f"\nReport: {rep.get('path_md')}")
 
 
 def cmd_graph(a, cfg):

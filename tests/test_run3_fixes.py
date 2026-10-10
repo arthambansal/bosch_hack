@@ -96,6 +96,23 @@ checks["fmea: big backlog is a medium-severity finding, not 'no effect'"] = s ==
 d = rule_based(res)
 checks["diagnosis: backlog explained as slow worker, not loss"] = "not lost" in d["root_cause"] and "worker" in d["root_cause"]
 
+# 7) end-of-run recommended-fixes table
+from core.recommend import build, render  # noqa: E402
+st = {"fmea": [{"id": "E1", "rpn": 270, "action_priority": "High"}, {"id": "E3", "rpn": 630, "action_priority": "High"}, {"id": "E5", "rpn": 60, "action_priority": "Low"}],
+      "results": [{"id": "E1", "steps": [{"type": "kill", "target": "redis"}], "delivery": {"lost": 3}, "stuck_services": []},
+                  {"id": "E3", "steps": [{"type": "pause", "target": "redis"}], "delivery": {"lost": 0}, "stuck_services": ["worker"]}],
+      "graph": {"services": {"redis": {"role": "queue", "stateful": True}}},
+      "recommendations": [{"problem": "Redis single point of failure", "recommendation": "add replica + Sentinel"}]}
+live = [{"id": "restart-policy", "for": ["E1", "E3"], "status": "verified", "why": "w", "rpn": [{"id": "E1", "before": 270, "after": 30}, {"id": "E3", "before": 630, "after": 90}]}]
+rows = build(st, live)
+text = render(rows)
+checks["fix table: verified fix shows risk before->after"] = "900 -> 120" in text and "VERIFIED" in text
+checks["fix table: catalog fix that never applied is listed as NOT APPLIED"] = any(r["fix"] == "redis-durable" and "NOT APPLIED" in r["status"] for r in rows)
+checks["fix table: manual recommendation listed"] = any("MANUAL" in r["status"] for r in rows)
+checks["fix table: ranked by risk, highest first"] = [r["rpn_before"] for r in rows] == sorted([r["rpn_before"] for r in rows], reverse=True)
+checks["fix table: empty run says so"] = "No fixes recommended" in render(build({"fmea": [], "results": []}, []))
+print(text)
+
 for k, v in checks.items():
     print(("PASS " if v else "FAIL ") + k)
 print("ALL CHECKS PASSED" if all(checks.values()) else "SOME CHECKS FAILED")
