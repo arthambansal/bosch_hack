@@ -203,7 +203,8 @@ class Engine:
         if pred:   # did the agent's falsifiable prediction match reality?
             hit = {n for n, st in window.items() if st["error_rate"] >= 0.5}
             check = {"probes": hit == set(pred.get("probes_affected") or []),
-                     "recovers": (recovery_s is not None) == bool(pred.get("recovers", True)),
+                     # "recovers" means the whole system, so a crashed service that stayed down counts as NOT recovered
+                     "recovers": (recovery_s is not None and not stuck) == bool(pred.get("recovers", True)),
                      "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
             LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
                        + f" {check}")
@@ -213,6 +214,7 @@ class Engine:
                 "fault_window_s": round(t_restore - t_inject, 1), "probes": window,
                 "recovery_s": recovery_s, "guard_log": guard_log[-10:],
                 "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
+                "faults_injected": [f.describe() for f in faults],
                 "prediction": pred, "prediction_check": check,
                 "stuck_services": stuck, "stuck_details": stuck_details}
 

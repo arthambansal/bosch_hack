@@ -18,14 +18,23 @@ INVESTIGATION_SCHEMA = {"root_cause": "one or two sentences", "evidence": ["quot
 
 
 def investigate(cfg, graph, res, offline=False):
-    facts = {k: res.get(k) for k in ("name", "steps", "status", "abort_reason", "recovery_s", "stuck_services",
+    facts = {k: res.get(k) for k in ("name", "status", "abort_reason", "recovery_s", "stuck_services",
                                      "stuck_details", "delivery", "prediction", "prediction_check")}
+    # what was REALLY injected (e.g. "LATENCY 400ms -> redis"). The raw step field delay_s is only the wait before the
+    # step starts, so it is NOT passed: a model once read delay_s=0 as "no latency was injected".
+    facts["faults_injected"] = res.get("faults_injected") or [f"{s['type']} -> {s['target']}" for s in res.get("steps", [])]
+    facts["note"] = ("Faults were injected for the fault window and then removed. If an injected fault shows no effect, "
+                     "the system tolerated it; do not claim the fault was missing unless a tool shows that. 'KILL SWITCH' in the "
+                     "logs is OUR safety system restoring services after the error rate got too high; it never causes "
+                     "failures. delivery.lost is the number of lost votes: do not claim more than that.")
     facts["error_rate_by_probe"] = {k: v.get("error_rate") for k, v in (res.get("probes") or {}).items()}
     agent = ReActAgent(
         "Diagnostician",
         "an SRE doing root-cause analysis right after a chaos experiment. Use read-only tools (logs, container "
         "state, queue depth, database count, config) to explain WHY the system behaved the way it did",
-        make_tools(cfg, graph), INVESTIGATION_SCHEMA, max_steps=5, offline=offline)
+        make_tools(cfg, graph), INVESTIGATION_SCHEMA, max_steps=5, offline=offline,
+        starters=[("list_containers", {})] + [("container_logs", {"service": n, "lines": 20}) for n in
+                                              (res.get("stuck_services") or [st["target"] for st in res.get("steps", [])])[:3]])
     final, trace = agent.run(f"Explain the root cause of what happened in experiment {res.get('id')}.", facts)
     return {"final": final, "tool_calls": len(trace), "trace": trace}
 
@@ -52,8 +61,12 @@ def diagnostician_node(state):
     LIVE.set(agent_active="diagnostician")
     res = state["results"][-1]
     out = investigate(cfg(), state["graph"], res, offline=state.get("offline", False))
-    final = out.get("final") or rule_based(res)
-    final["by"] = "agent" if out.get("final") else "rules"
+    final = out.get("final")
+    cause = str((final or {}).get("root_cause", "")).strip()
+    if not final or len(cause) < 25 or cause.upper().startswith("KILL SWITCH"):   # empty or just a copied log line
+        final = None
+    final = final or rule_based(res)
+    final["by"] = "agent" if out.get("final") and final is out.get("final") else "rules"
     LIVE.event("ai", f"[Diagnostician] {res['id']} root cause: {final.get('root_cause')}")
     inv = dict(state.get("investigations") or {})
     inv[res["id"]] = final

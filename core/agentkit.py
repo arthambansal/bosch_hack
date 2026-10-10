@@ -27,38 +27,66 @@ class Tool:
         except Exception as e:  # tool errors are observations, never crashes
             return f"tool error: {e}"
         text = out if isinstance(out, str) else json.dumps(out, default=str)
-        return text[:1500]
+        return text[:1000]
 
 
 PROTOCOL = """Reply with JSON only, in ONE of these two shapes:
-  {{"thought": "what you want to check and why", "tool": "<tool name>", "args": {{...}}}}
-  {{"thought": "why you are done", "final": {final_schema}}}
+  {{"thought": "<one sentence: what you check and why>", "tool": "<tool name>", "args": {{...}}}}
+  {{"thought": "<one sentence: your conclusion>", "final": {final_schema}}}
 Rules: use only the listed tools; at most {max_steps} tool calls; check facts with tools instead of guessing;
-your final answer must cite evidence taken from tool outputs or the given context."""
+your final answer must cite evidence taken from tool outputs or the given context.
+IMPORTANT: you cannot call functions directly. To use a tool, write its name in the "tool" field of the JSON reply."""
 
 
 class ReActAgent:
-    def __init__(self, name, role, tools, final_schema, max_steps=5, offline=False):
+    def __init__(self, name, role, tools, final_schema, max_steps=5, offline=False, min_calls=2, starters=None):
         self.name, self.tools, self.max_steps, self.offline = name, tools, max_steps, offline
+        # starters: list of (tool, args) run by CODE (read-only, no AI call) if the model wastes 3 steps in a row
+        self.starters = starters or [(t.name, {}) for t in tools.values() if not t.args]   # default: tools needing no arguments
+        self.min_calls = min_calls     # evidence rule: no final answer before this many tool calls
         self.system = f"You are {name}, {role}.\n" + PROTOCOL.format(
             final_schema=json.dumps(final_schema), max_steps=max_steps)
 
+    def _gather(self, trace, seen):
+        """The model keeps missing (unknown or repeated tools). Run the basic read-only checks ourselves so it can
+        still answer from REAL evidence. Returns True if anything was gathered."""
+        todo = [(n, a) for n, a in self.starters if n in self.tools and (n, json.dumps(a, sort_keys=True)) not in seen]
+        if not todo:
+            return False
+        LIVE.event("warn", f"[{self.name}] the AI kept missing; gathering basic evidence with read-only tools")
+        for n, a in todo[:self.max_steps]:
+            seen.add((n, json.dumps(a, sort_keys=True)))
+            LIVE.event("ai", f"[{self.name}] (code) calls {n}({json.dumps(a)})")
+            trace.append({"step": 0, "thought": "evidence gathered by code", "tool": n, "args": a,
+                          "observation": self.tools[n].run(a)})
+        return True
+
     def run(self, goal, context):
         """Returns (final_answer_dict_or_None, trace)."""
-        trace = []
+        trace, seen, waste = [], set(), 0
         tool_list = "\n".join(f"- {t.name}({', '.join(t.args)}): {t.description}" for t in self.tools.values())
         LIVE.event("ai", f"[{self.name}] started: {goal}")
-        for step in range(1, self.max_steps + 2):
-            last = step > self.max_steps
-            user = (f"GOAL: {goal}\n\nCONTEXT:\n{json.dumps(context, indent=1, default=str)[:6000]}"
-                    f"\n\nTOOLS:\n{tool_list}\n\nEVIDENCE SO FAR:\n"
-                    + (json.dumps(trace, indent=1)[-6000:] if trace else "nothing yet")
+        for step in range(1, 2 * self.max_steps + 6):          # hard cap, even if the model misbehaves
+            calls = sum(1 for t in trace if t["tool"] in self.tools)   # real tool calls only, not rejections
+            last = calls >= self.max_steps
+            user = (f"GOAL: {goal}\n\nCONTEXT:\n{json.dumps(context, default=str)[:3500]}"
+                    f"\n\nAVAILABLE TOOLS (request one through the JSON reply):\n{tool_list}\n\nEVIDENCE SO FAR:\n"
+                    + (json.dumps(trace)[-3500:] if trace else "nothing yet")
                     + ("\n\nTool budget used up. Give your final answer now." if last else ""))
-            data, _ = ask_json(f"{self.name}_step{step}", self.system, user, offline=self.offline, max_tokens=700)
+            data, _ = ask_json(f"{self.name}_step{step}", self.system, user, offline=self.offline, max_tokens=700, tool_agent=True)
             if not data:
                 LIVE.event("warn", f"[{self.name}] no AI answer available, stopping")
                 return None, trace
             thought = str(data.get("thought", ""))[:300]
+            if "final" in data and not last and calls < self.min_calls:
+                LIVE.event("warn", f"[{self.name}] tried to conclude with {calls} tool call(s); evidence required, continuing")
+                trace.append({"step": step, "thought": thought, "tool": None, "args": {},
+                              "observation": f"REJECTED: you must call at least {self.min_calls} tools and cite their "
+                                             f"output before giving a final answer. Call a tool now."})
+                waste += 1
+                if waste >= 3 and self._gather(trace, seen):
+                    waste = 0
+                continue
             if "final" in data or last:
                 final = data.get("final") if isinstance(data.get("final"), dict) else None
                 LIVE.event("ai", f"[{self.name}] conclusion: {thought}")
@@ -67,10 +95,27 @@ class ReActAgent:
             args = data.get("args") if isinstance(data.get("args"), dict) else {}
             tool = self.tools.get(name)
             LIVE.event("ai", f"[{self.name}] thinks: {thought}")
+            sig = (name, json.dumps(args, sort_keys=True, default=str))
+            if tool and sig in seen:
+                # same call again: do not run or count it, point the model back at the evidence it already has
+                LIVE.event("warn", f"[{self.name}] repeated {name}({json.dumps(args)}), skipped")
+                trace.append({"step": step, "thought": thought, "tool": None, "args": args,
+                              "observation": f"You already called {name} with these arguments; the result is in the "
+                                             f"evidence above. Call a DIFFERENT tool or give your final answer."})
+                waste += 1
+                if waste >= 3 and self._gather(trace, seen):
+                    waste = 0
+                continue
             if tool:
+                waste = 0
+                seen.add(sig)
                 LIVE.event("ai", f"[{self.name}] calls {name}({json.dumps(args)})")
                 obs = tool.run(args)
             else:
+                LIVE.event("warn", f"[{self.name}] asked for unknown tool {name!r} with {json.dumps(args, default=str)[:150]}")
                 obs = f"unknown tool '{name}'. Available tools: {sorted(self.tools)}"
+                waste += 1
             trace.append({"step": step, "thought": thought, "tool": name, "args": args, "observation": obs})
+            if waste >= 3 and self._gather(trace, seen):
+                waste = 0
         return None, trace

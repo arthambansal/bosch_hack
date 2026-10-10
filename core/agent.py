@@ -23,7 +23,10 @@ Rules:
 - Learn from results: if something surprising happened (data loss, slow recovery, failure spreading to a service
   predicted to be safe), dig deeper there. If a service held up, move on to a different weak point.
 - A step list has 1 step, or 2 for a combined failure (second step delayed 3-15 s).
-- Before running, state a falsifiable prediction.
+- Before running, state a falsifiable prediction. Be CALIBRATED: use the results so far. If an earlier experiment left a
+  service crashed (stuck_services) and a similar fault is coming, predict recovers=false; if a fault was tolerated,
+  predict no effect. Do not repeat an optimistic prediction that reality already contradicted.
+- steps[].delay_s is the wait BEFORE a step starts, not the size of the fault.
 - You may finish only after at least 3 experiments have run.
 Reply with JSON only."""
 
@@ -64,6 +67,8 @@ class Agent:
     def _history(self, results):
         return [{"id": r["id"], "experiment": r["name"], "status": r["status"], "recovery_s": r.get("recovery_s"),
                  "lost_votes": (r.get("delivery") or {}).get("lost"),
+                 "services_left_crashed": r.get("stuck_services"),
+                 "faults_injected": r.get("faults_injected"),
                  "error_rate": {k: v["error_rate"] for k, v in (r.get("probes") or {}).items()},
                  "prediction_check": r.get("prediction_check")} for r in results]
 

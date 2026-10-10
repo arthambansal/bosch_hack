@@ -7,6 +7,8 @@ LangGraph gives us: explicit routing (the AI decides INSIDE nodes, the graph dec
 interrupt() for human approval, a checkpointer (pause/resume), streaming of every node for the dashboard,
 and an auto-generated diagram of the graph (python chaospilot.py graph).
 """
+import json
+import os
 import select
 import sys
 import time
@@ -15,7 +17,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from core.common import BASELINE_FILE, DEPS_FILE, LIVE, RUNS_DIR, load_json
+from core.common import BASELINE_FILE, DEPS_FILE, LIVE, RUNS_DIR, STOP_FILE, load_json
 
 from . import runtime
 from .nodes.execute import evaluate_node, execute_node, needs_investigation, verify_node
@@ -28,6 +30,23 @@ from .nodes.experimenter import experimenter_node
 from .state import ChaosState
 
 MAX_REJECTIONS = 3
+
+
+class RunStopped(Exception):
+    """The operator created the STOP file (dashboard STOP button or `touch STOP`): halt the whole autopilot run."""
+
+
+# nodes that may still run after STOP so the report and the last result are written
+STOP_EXEMPT = {"evaluate", "reporter"}
+
+
+def stoppable(name, fn):
+    """Check the STOP file before EVERY node. Outermost wrapper, so guarded()'s fallbacks cannot swallow the stop."""
+    def wrapper(state):
+        if name not in STOP_EXEMPT and os.path.exists(STOP_FILE):
+            raise RunStopped(name)
+        return fn(state)
+    return wrapper
 
 
 def guarded(name, fn, fallback):
@@ -65,7 +84,7 @@ def build(checkpointer=None):
                      ("approval", approval_node), ("execute", execute_node), ("evaluate", evaluate_node),
                      ("diagnostician", diagnostician_node), ("remediator", remediator_node),
                      ("verify", verify_node), ("reporter", reporter_node)]:
-        g.add_node(name, guarded(name, fn, FALLBACKS[name]) if name in FALLBACKS else fn)
+        g.add_node(name, stoppable(name, guarded(name, fn, FALLBACKS[name]) if name in FALLBACKS else fn))
     g.add_edge(START, "cartographer")
     g.add_edge("cartographer", "experimenter")
     g.add_conditional_edges("experimenter", lambda s: "governor" if s.get("proposal") else "remediator",
@@ -85,21 +104,31 @@ def build(checkpointer=None):
     return g.compile(checkpointer=checkpointer or MemorySaver())
 
 
+def _read_answer(path):
+    """Dashboard / Discord format (CONTRACT.md): {"approved": true|false}. The older {"answer": "yes"} still works."""
+    data = json.load(open(path))
+    if "approved" in data:
+        return "yes" if data["approved"] is True else "no"
+    return str(data.get("answer", "no"))
+
+
 def ask_human(req, timeout_s=180):
-    """Terminal y/n, or the dashboard writes runs/approval.json {"answer": "yes"}. No answer = deny (safe default)."""
-    import json
-    import os
+    """Terminal y/n, or the dashboard writes runs/approval.json {"approved": true}. No answer = deny (safe default).
+    A STOP file ends the wait at once (answer = no) and the run halts at the next node."""
     path = os.path.join(RUNS_DIR, "approval.json")
     if os.path.exists(path):
         os.remove(path)
     print(f"\n>>> HUMAN APPROVAL NEEDED: {req['question']}\n    why: {req.get('reason')}\n    type y or n: ", end="", flush=True)
     end = time.time() + timeout_s
     while time.time() < end:
+        if os.path.exists(STOP_FILE):
+            print("(STOP requested, denied)")
+            return "no"
         if os.path.exists(path):
             try:
-                return json.load(open(path)).get("answer", "no")
+                return _read_answer(path)
             except (OSError, ValueError):
-                pass
+                pass                                     # file still being written: try again
         ready, _, _ = select.select([sys.stdin], [], [], 0.5)
         if ready:
             return sys.stdin.readline().strip()
@@ -132,9 +161,17 @@ def run(goal="", require_approval=False, offline=False, heal=True):
             inp = Command(resume=ask_human(pending))
     except KeyboardInterrupt:
         LIVE.event("guard", "Ctrl+C - restoring everything before exit")
+    except RunStopped as e:
+        LIVE.event("guard", f"STOP file detected before node '{e}': autopilot halted, restoring everything")
     finally:
         runtime.finish()
-    return app.get_state(conf).values
+    values = app.get_state(conf).values
+    if os.path.exists(STOP_FILE) and values.get("results") and not values.get("report"):
+        try:                                             # still give the operator a report of what ran before STOP
+            values = {**values, **reporter_node(values)}
+        except Exception as e:  # noqa: BLE001
+            LIVE.event("warn", f"[Reporter] could not write the partial report: {e}")
+    return values
 
 
 def mermaid():
