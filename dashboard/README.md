@@ -226,3 +226,11 @@ Manual review at **1920×1080** and **1440×900**:
 
 Browser checks are separate from hook/SSR tests: those tests do not establish full
 accessibility compliance, native clipboard/download behavior, or all visual states.
+
+## Mystery Mode from the browser
+
+When no Mystery engine is running, the Mystery panel shows a **Start Mystery Mode** button. It makes the dashboard server run the
+fixed command `python3 chaospilot.py mystery --wait --up` (the voting app is started first; nothing from the browser is put in the
+command), writes its pid to `runs/mystery_consumer.pid` and its output to `runs/mystery_consumer.log`. Pressing it again says the
+engine is already running. Export the Groq variables in the terminal that runs the dashboard server so the engine inherits them.
+It refuses while a `STOP` file exists. The terminal command still works too.

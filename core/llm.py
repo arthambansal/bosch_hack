@@ -58,6 +58,8 @@ def _call(system, user, max_tokens, json_mode=True, model=None):
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if reasoning and not NO_REASONING_PARAM["on"]:
         body["reasoning_effort"] = os.getenv("LLM_REASONING_EFFORT", "low")
+    if json_mode and "json" not in (system + user).lower():
+        body["messages"][-1]["content"] += "\n\n(Reply with a single JSON object.)"      # Groq: json_object mode needs the word 'json'
     if json_mode:
         # JSON mode forces a valid JSON object. Without it, some models answer in their own tool-call syntax,
         # which Groq rejects with HTTP 400 or which contains no JSON at all.
@@ -154,6 +156,9 @@ def _key(kind, system, user):
     return hashlib.sha1((kind + system + user).encode()).hexdigest()[:12]
 
 
+QUOTA_USED_UP = set()          # models whose daily token quota is gone: skip them for the rest of this process
+
+
 def ask_json(kind, system, user, offline=False, max_tokens=2500, tool_agent=False):
     """Returns (parsed_json_or_None, source) where source is the provider, 'cache' or 'none'.
 
@@ -168,6 +173,9 @@ def ask_json(kind, system, user, offline=False, max_tokens=2500, tool_agent=Fals
         cached = load_json(exact) or load_json(last)
         return (cached, "cache") if cached else (None, "none")
     if provider() == "none":
+        return None, "none"
+    model_in_use = (os.environ.get("LLM_AGENT_MODEL") if tool_agent and os.getenv("LLM_AGENT_MODEL") else None) or os.getenv("LLM_MODEL", "")
+    if model_in_use in QUOTA_USED_UP:                  # already known to be out of daily tokens: fall back at once
         return None, "none"
     try:
         LIVE.event("ai", f"AI ({provider()}) thinking about: {kind} ...")
@@ -187,6 +195,11 @@ def ask_json(kind, system, user, offline=False, max_tokens=2500, tool_agent=Fals
                     data = _salvage_tool_call(e.response)
                     if data:
                         break
+                if code == 429 and e.response is not None and "per day" in e.response.text.lower():
+                    QUOTA_USED_UP.add(extra.get("model") or os.getenv("LLM_MODEL", ""))
+                    LIVE.event("warn", "AI DAILY TOKEN QUOTA used up for this model (Groq resets it on a rolling 24h window): "
+                                       "no point waiting. Use --offline, another key, or LLM_AGENT_MODEL=<another model>.")
+                    raise
                 if code == 429 and rate_waits:
                     wait = rate_waits.pop(0)
                     try:                              # Groq says how long to wait ("retry-after" seconds): use it

@@ -49,6 +49,9 @@ def detect_fault(res, configuration=None, baseline=None, observation=None):
     lost = (res.get('delivery') or {}).get('lost')
     if isinstance(lost, (int, float)) and lost > 0:
         evidence.append(f"{lost} accepted votes undelivered at measurement cutoff")
+    growth = (res.get('delivery') or {}).get('backlog_growth')
+    if isinstance(growth, (int, float)) and growth > 0:
+        evidence.append(f"{growth} accepted votes still queued in Redis at the cutoff (backlog, not counted as lost)")
     if 'recovery_s' in res and res['recovery_s'] is None:
         evidence.append('Recovery not observed within measurement window')
     if observation and observation.get('experiment') == res.get('id'):
@@ -264,6 +267,13 @@ def rule_based(res, graph=None):
         return {"root_cause": f"{', '.join(stuck)} remained stopped at inspection. "
                               "The crash mechanism, onset and restart-policy contribution are not established.",
                 "evidence": ev, "affected_services": stuck, "confidence": "low", "suggested_fix": ""}
+    growth = (res.get("delivery") or {}).get("backlog_growth") or 0
+    if growth and not lost:
+        return {"root_cause": f"{growth} accepted votes were still waiting in the Redis queue at the cutoff: the worker drains "
+                              "the queue slower than votes arrive, so results lag behind. They were not lost. The worker's "
+                              "per-vote delay is a likely cause (check its source) but is not established here.",
+                "evidence": [f"queued at cutoff: {growth}"], "affected_services": ["worker", "redis"],
+                "confidence": "medium", "suggested_fix": ""}
     if lost:
         return {"root_cause": f"{lost} votes were undelivered at the measurement cutoff; "
                               "the cause and permanent loss are not established.",

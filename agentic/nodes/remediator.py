@@ -50,8 +50,16 @@ def remediator_node(state):
     for f in new:
         LIVE.event("ai", f"[Remediator] ({source}) applying {f['id']} for {f['rows']}: {f['why']}")
     all_fixes = applied + new
-    if not apply_fixes(all_fixes, cfg()):
-        LIVE.event("warn", "[Remediator] docker compose could not apply the fixes")
+    ok = apply_fixes(all_fixes, cfg())
+    if not ok and any(f["id"] == "ai-generated-override" for f in new):
+        # One bad AI-drafted file must not throw away the proven catalog fixes: retry without it.
+        LIVE.event("warn", "[Remediator] docker compose rejected the AI-drafted override; applying the catalog fixes without it")
+        new = [f for f in new if f["id"] != "ai-generated-override"]
+        all_fixes = applied + new
+        ok = bool(new) and apply_fixes(all_fixes, cfg())
+    if not ok:
+        LIVE.event("warn", "[Remediator] docker compose could not apply the fixes; restoring the last good sandbox state")
+        apply_fixes(applied, cfg())            # bring every service back (base compose + fixes that already worked)
         return {"pending_fix": False}
     time.sleep(12)   # let recreated containers come up
     return {"fixes": all_fixes, "recommendations": extras, "fix_attempts": state.get("fix_attempts", 0) + 1,

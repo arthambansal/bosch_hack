@@ -33,10 +33,17 @@ def _lost(result):
     return (result.get("delivery") or {}).get("lost") or 0
 
 
+def _backlog(result):
+    return (result.get("delivery") or {}).get("backlog_growth") or 0
+
+
 def severity(r, baseline):
     err, lost = _max(r, "error_rate"), _lost(r)
     if lost > 0:
         s, effect = 10, f"{lost} accepted votes silently lost (data integrity violated)"
+    elif _backlog(r) >= 100 and not (r.get("recovery_s") is None or r.get("stuck_services")):
+        s, effect = 6, (f"{_backlog(r)} accepted votes stuck in the queue at the cutoff (worker cannot keep up; "
+                        "not lost, but results lag far behind)")
     elif r.get("recovery_s") is None or r.get("stuck_services"):
         stuck = r.get("stuck_services")
         s, effect = 9, (f"cascade: {', '.join(stuck)} crashed and never restarted on their own" if stuck

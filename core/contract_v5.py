@@ -101,6 +101,8 @@ def validate_fixes(fixes):
                 p.append(f"fixes[{i}].status invalid")
             if "rollback_failed" in f and not isinstance(f["rollback_failed"], bool):
                 p.append(f"fixes[{i}].rollback_failed must be true/false")
+            if "untested" in f and not (isinstance(f["untested"], list) and all(isinstance(x, str) for x in f["untested"])):
+                p.append(f"fixes[{i}].untested must be a list of experiment ids")
             if f.get("rollback_failed") and f.get("status") != "applied":
                 p.append(f"fixes[{i}]: rollback_failed means the fix is still applied")
             if f.get("rollback_failed") and not isinstance(f.get("worse"), dict):

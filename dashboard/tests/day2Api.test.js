@@ -43,3 +43,17 @@ test('null Mystery acknowledgement and request timeout remain uncertain; 400 sta
  t.mock.method(globalThis,'fetch',async()=>json({error:'unknown_choice'},400));await assert.rejects(day2Api.requestMystery('random',live()),error=>error.status===400&&!error.uncertain);
  t.mock.method(globalThis,'fetch',async()=>json({error:'timeout'},408));await assert.rejects(day2Api.requestMystery('random',live()),error=>error.uncertain);
 });
+
+test('Start Mystery Mode posts an empty body and tells started from already running',async t=>{
+ const seen=[]; t.mock.method(globalThis,'fetch',async(path,options)=>{seen.push([path,options.method,options.body]); return json(seen.length===1?{started:true}:{already_running:true},seen.length===1?202:200);});
+ assert.deepEqual(await day2Api.startMystery(live()),{started:true,alreadyRunning:false});
+ assert.deepEqual(await day2Api.startMystery(live()),{started:false,alreadyRunning:true});
+ assert.deepEqual(seen[0],['/mystery/start','POST','{}']);
+});
+test('Start Mystery Mode refuses fixtures and disconnected pages, and reports server rejection',async t=>{
+ let calls=0; t.mock.method(globalThis,'fetch',async()=>{calls++; return json({error:'stop_file_present'},409);});
+ await assert.rejects(day2Api.startMystery({...live(),source:'fixture'})); await assert.rejects(day2Api.startMystery({...live(),status:'stale'})); assert.equal(calls,0);
+ await assert.rejects(day2Api.startMystery(live()),error=>error.status===409&&error.code==='stop_file_present'&&!error.uncertain); assert.equal(calls,1);
+ t.mock.method(globalThis,'fetch',async()=>json({ok:1},202));
+ await assert.rejects(day2Api.startMystery(live()),error=>error.uncertain===true);
+});

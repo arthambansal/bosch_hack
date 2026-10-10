@@ -4,6 +4,7 @@ import { timestamp } from '../truthModel.js';
 import { SectionHeading } from './ui.jsx';
 import { useControls } from './ControlProvider.jsx';
 import ControlFeedback from './ControlFeedback.jsx';
+import { day2Api } from '../api/day2Api.js';
 import InfoTooltip from './InfoTooltip.jsx';
 
 function Panel({ id, eyebrow, title, description, children }) {
@@ -17,12 +18,18 @@ const Missing=()=> <p className="missing-data">Not available</p>;
 export function MysteryPanel({ live }) {
   const data=mysteryPresentation(live.state.mystery),controls=useControls();
   const [choice,setChoice]=useState('');
+  const [startNote,setStartNote]=useState('');
+  async function startEngine(){
+    setStartNote('Starting the voting app and the Mystery engine. This takes about 20 seconds; the fault menu appears here when it is ready.');
+    try { const r=await day2Api.startMystery(live); setStartNote(r.alreadyRunning ? 'The Mystery engine is already running. Waiting for its menu.' : 'Started. Waiting for the menu. If nothing appears within a minute, see runs/mystery_consumer.log.'); }
+    catch(error) { setStartNote(error?.code==='stop_file_present' ? 'A STOP file exists. Delete the file named STOP in the project folder, then press Start again.' : (error?.message || 'Could not start Mystery Mode.')); }
+  }
   const selectedValid=choice==='random' ? data.menu.length>0 : data.menu.some(item=>item.id===choice);
   return <Panel id="mystery-title" eyebrow="BLIND DIAGNOSIS LAB" title="Mystery Mode" description="Choose a sandbox fault. Agents must identify it from evidence; the backend controls injection and reveal.">
     <Readouts items={[["Published state",data.state],["Trial",data.trial],["Chosen by",data.chosenBy]]}/>
     <div className="mystery-selection"><label htmlFor="mystery-choice">Allowed faults</label><select id="mystery-choice" value={selectedValid?choice:''} onChange={event=>setChoice(event.target.value)} disabled={!controls?.mysteryAvailable}><option value="">Select a published fault</option>{data.menu.length>0 && <option value="random">Random allowed fault</option>}{data.menu.map(item=><option key={item.id} value={item.id}>{item.label} · {item.fault} / {item.target}</option>)}</select><button className="p1-primary" disabled={!controls?.mysteryAvailable || !selectedValid} onClick={()=>controls.openMysteryDialog(choice)}>Break it yourself</button></div>
     <p className="p1-note">Explicit confirmation is required. Submission needs a fresh live idle trial, an allowed menu, and no conflicting control request. Fixture snapshots cannot submit.</p>
-    {!data.menu.length && <p className="missing-data">Allowed menu: Not available. Start judge mode in a terminal: <code>python3 chaospilot.py mystery --wait</code></p>}
+    {!data.menu.length && <div className="missing-data"><p>Allowed menu: Not available. The Mystery engine is not running yet.</p><button type="button" onClick={startEngine} disabled={live?.status!=='connected'||live?.source==='fixture'}>Start Mystery Mode</button>{startNote && <p role="status">{startNote}</p>}<p>Terminal alternative: <code>python3 chaospilot.py mystery --wait</code></p></div>}
     <ControlFeedback result={controls?.mysteryResult}/>
     <details className="p1-details"><summary>Published menu and trial evidence</summary>{data.menu.length ? <ul>{data.menu.map(item=><li key={item.id}><code>{item.id}</code> — {item.label} · {item.fault} / {item.target}</li>)}</ul> : <Missing/>}<Readouts items={[["Injected at",timestamp(data.injectedAt)],["Detected at",timestamp(data.detectedAt)],["Diagnosed at",timestamp(data.diagnosedAt)],["Detected by",data.detectedBy]]}/></details>
     <div className="mystery-results"><article><h3>Published guess · not the answer</h3>{data.guess ? <><Readouts items={[["Fault",data.guess.fault],["Target",data.guess.target],["Confidence",data.guess.confidence],["Memory hit",data.guess.memoryHit]]}/><p>{data.guess.rootCause}</p><h4>Evidence</h4>{data.guess.evidence.length ? <ul>{data.guess.evidence.map((item,i)=><li key={i}>{item}</li>)}</ul>:<Missing/>}<details className="p1-details"><summary>Top-three guesses</summary>{data.guess.top3.length ? <ol>{data.guess.top3.map((item,i)=><li key={i}>{item.fault} / {item.target} · confidence {item.confidence}</li>)}</ol> : <Missing/>}</details></> : <p className="missing-data">Not available — waiting for a published diagnosis.</p>}</article>

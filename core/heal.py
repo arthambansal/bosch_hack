@@ -304,6 +304,24 @@ def validate_generated_override(override):
     return True, "valid"
 
 
+def healthchecked_services(existing_fixes):
+    """Services that really have a Docker healthcheck. The base sandbox has none; only the postgres-healthcheck fix adds one (db)."""
+    return {"db"} if any(isinstance(f, dict) and f.get("id") == "postgres-healthcheck" for f in existing_fixes) else set()
+
+
+def sanitize_generated_override(override, existing_fixes):
+    """`condition: service_healthy` on a service WITHOUT a healthcheck makes `docker compose up` fail for the whole stack
+    (seen live: "dependency failed to start: container chaos-redis has no healthcheck configured"), which also threw away
+    the good catalog fixes. Downgrade such conditions to service_started. Returns (override, notes)."""
+    ok, notes = healthchecked_services(existing_fixes), []
+    for service, config in override["services"].items():
+        for dependency, cond in (config.get("depends_on") or {}).items():
+            if cond.get("condition") == "service_healthy" and dependency not in ok:
+                cond["condition"] = "service_started"
+                notes.append(f"{service} -> {dependency}: service_healthy changed to service_started ({dependency} has no healthcheck)")
+    return override, notes
+
+
 def draft_ai_remediation(rows, results, graph, existing_fixes, offline=False):
     """Draft one safe compose override and one human-readable, unapplied code patch."""
     actionable = [r for r in rows if r.get("action_priority") != "Low"]
@@ -363,6 +381,10 @@ return override=null. Do not claim a fix is proven before verification.
     if not ok:
         LIVE.event("warn", f"[Remediator] rejected generated override: {reason}")
         return None, data.get("code_patch")
+
+    override, notes = sanitize_generated_override(override, existing_fixes)
+    for note in notes:
+        LIVE.event("warn", f"[Remediator] AI override corrected: {note}")
 
     row_ids = [r["id"] for r in actionable if r.get("id")]
     if not row_ids:

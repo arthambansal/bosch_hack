@@ -15,6 +15,14 @@ from .probes import Prober, backlog, settled_count, summarize
 from .knowledge import KnowledgeStore
 from .observer import summary as observer_summary
 
+def account_delivery(sent, delivered, q0, q1):
+    """accepted votes = stored + still queued + lost  ->  (lost, backlog_growth). Unknown queue sizes count as 0 growth."""
+    if delivered is None:
+        return None, 0
+    growth = (q1 - q0) if None not in (q0, q1) else 0
+    return max(0, sent - delivered - growth), max(0, growth)
+
+
 class Guard:
     """Trips when thresholds are breached for `breach_ticks` consecutive checks.
 
@@ -92,23 +100,23 @@ class Engine:
             time.sleep(0.5)
 
     def _quiesce(self):
-        """Pause traffic, let in-flight requests finish, return (votes_accepted, votes_delivered)."""
+        """Pause traffic, let in-flight requests finish, return (votes_accepted, votes_delivered, votes_still_queued)."""
         self.prober.hold.set()
         time.sleep(self.cfg["safety"]["probe_timeout_s"] + 0.3)
         sent = self.prober.votes_ok
         delivered = settled_count(self.cfg)
-        return sent, delivered
+        return sent, delivered, backlog(self.cfg)
 
     # ------------------------------------------------------------------ baseline
     def baseline(self, seconds=30):
         LIVE.set(phase="baseline")
         LIVE.event("info", f"Capturing baseline: {seconds}s of steady traffic ...")
         self.prober.start()
-        sent0, c0 = self._quiesce()
+        sent0, c0, _q0 = self._quiesce()
         self.prober.hold.clear()
         t0 = time.time()
         self._sleep_publishing(seconds)
-        sent1, c1 = self._quiesce()
+        sent1, c1, _q1 = self._quiesce()
         self.prober.hold.clear()
         probes = {p["name"]: summarize(self.prober.since(p["name"], t0)) for p in self.cfg["probes"]}
         sent = sent1 - sent0
@@ -153,7 +161,7 @@ class Engine:
         if down:
             LIVE.event("warn", f"PRE-FLIGHT: {down} were not running, starting them so the experiment is clean")
             self._start_services(down)
-        sent0, c0 = self._quiesce()
+        sent0, c0, q0 = self._quiesce()
         self.prober.hold.clear()
         self._sleep_publishing(d["warmup_s"])
 
@@ -235,17 +243,25 @@ class Engine:
             LIVE.event("guard", f"CASCADE FAILURE: {'a service' if hidden else stuck} crashed and did NOT come back on their own "
                                 f"(probes look healthy, but the pipeline is silently broken)")
             self._start_services(stuck)   # manual rescue so the next experiment starts clean
-        sent1, c1 = self._quiesce()
+        sent1, c1, q1 = self._quiesce()
         self.prober.hold.clear()
         sent = sent1 - sent0
         delivered = (c1 - c0) if None not in (c0, c1) else None
-        lost = max(0, sent - delivered) if delivered is not None else None
+        # Votes still waiting in the queue are a BACKLOG, not a loss: votes accepted = stored + still queued + lost.
+        # This also stops a backlog left over from the previous experiment from being counted as "extra delivered".
+        lost, backlog_growth = account_delivery(sent, delivered, q0, q1)
         if lost:
             LIVE.event("guard", f"DATA LOSS: {sent} votes accepted, only {delivered} reached the database ({lost} lost)")
         elif lost == 0:
-            extra = (f" ({delivered - sent} vote(s) the client saw as failed/timed out were still stored: "
-                     "the user got an error for a vote that counted)") if delivered > sent else ""
-            LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered{extra}")
+            if backlog_growth > 0:
+                LIVE.event("guard", f"BACKLOG: {sent} votes accepted, {delivered} stored, {backlog_growth} still waiting in the queue "
+                                    "at the cutoff (the worker drains slowly). Not counted as lost, but users wait for them.")
+            else:
+                drained = max(0, delivered - sent) if q0 else 0
+                extra = (f" ({drained} vote(s) queued before this experiment were stored during it)" if drained else
+                         f" ({delivered - sent} vote(s) the client saw as failed/timed out were still stored: "
+                         "the user got an error for a vote that counted)" if delivered > sent else "")
+                LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered{extra}")
 
         window = {}
         for p in cfg["probes"]:
@@ -300,7 +316,7 @@ class Engine:
                 "status": "aborted" if aborted else "completed", "abort_reason": aborted,
                 "fault_window_s": round(t_restore - t_inject, 1), "probes": window,
                 "recovery_s": recovery_s, "guard_log": guard_log[-10:],
-                "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
+                "delivery": {"sent": sent, "delivered": delivered, "lost": lost, "queued": q1, "backlog_growth": backlog_growth},
                 "faults_injected": [f.describe() for f in faults],
                 "prediction": pred, "prediction_check": check,
                 "stuck_services": stuck, "stuck_details": stuck_details,"observation": observation}

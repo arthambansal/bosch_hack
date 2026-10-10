@@ -119,12 +119,16 @@ the time the memory path took now (measured, not estimated).
   "for": ["E1", "E2"], "why": "one or two sentences with numbers", "diff": "unified diff text or null",
   "status": "proposed | applied | verified | not_improved | rolled_back",
   "rpn": [{"id": "E2", "before": 270, "after": 30}],
-  "rollback_failed": false, "worse": null}]
+  "rollback_failed": false, "worse": null, "untested": []}]
 ```
 `code_suggestion` entries are always `proposed` (never applied).
 `rollback_failed: true` = the fix made a row worse (`worse = {"id": "E3", "before": 630, "after": 700}`) but docker could
 not undo it, so it is STILL running: `status` stays `applied`. Show it as a red "rollback failed" badge. Otherwise
 `rollback_failed` is `false` and `worse` is `null`. A successful undo is `status: rolled_back`.
+`untested` = experiment ids this fix is responsible for (`for`) that were NOT re-run by the Verifier (STOP, budget), so
+they have no before/after `rpn` row: the evidence is missing, which means "not proven", not "proven useless". It is always
+a list (empty when every row was re-tested) and is kept together with `rollback_failed` and `worse`: a fix can be
+rollback-failed on E1 and still have E5 untested. Show it as a small "not re-tested: E5" note.
 
 ### 4.5 `impact` — function by Tejas (`core/report_extras.impact_of`), published by Artham after each experiment
 ```json
