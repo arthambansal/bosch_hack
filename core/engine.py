@@ -11,10 +11,9 @@ import time
 from .common import BASELINE_FILE, LATEST_FILE, LIVE, PLAN_FILE, RUNS_DIR, STOP_FILE, docker, load_json, save_json
 from .faults import Fault, SafetyError, panic
 from .fmea import build_fmea
-from .probes import Prober, settled_count, summarize
+from .probes import Prober, backlog, settled_count, summarize
 from .knowledge import KnowledgeStore
-from . import observer
-
+from .observer import summary as observer_summary
 
 class Guard:
     """Trips when thresholds are breached for `breach_ticks` consecutive checks.
@@ -129,6 +128,7 @@ class Engine:
         guard = Guard(cfg, self.prober, exp["predicted_probes"])
         pending = sorted(zip(exp["steps"], faults), key=lambda x: x[0].get("delay_s", 0))
         t_inject, aborted, guard_log = time.time(), None, []
+        queue_start = backlog(cfg)
         while True:
             elapsed = time.time() - t_inject
             while pending and pending[0][0].get("delay_s", 0) <= elapsed:
@@ -220,6 +220,30 @@ class Engine:
                      "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
             LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
                        + f" {check}")
+        observation_end = time.time()
+        queue_end = backlog(cfg)
+
+        first_guard_time = (
+                guard_log[0]["t"]
+                if guard_log
+                else None
+            )
+        observation = observer_summary(
+            t_start=t_inject,
+            t_end=t_restore,
+            cfg={**cfg, "experiment": exp["id"]},
+            prober=self.prober,
+            queue_start=queue_start,
+            queue_end=queue_end,
+            accepted_count=sent,
+            delivered_count=delivered,
+            kill_switch=aborted if aborted and (
+                "KILL SWITCH" in aborted
+                or "kill switch" in aborted.lower()
+            ) else None,
+            stuck_services=stuck,
+            mttd_s=first_guard_time,
+            mttr_s=recovery_s)
         result = {"id": exp["id"], "name": exp["name"], "steps": exp["steps"], "reason": exp["reason"],
                 "hypothesis": exp.get("hypothesis"), "predicted_probes": exp["predicted_probes"],
                 "status": "aborted" if aborted else "completed", "abort_reason": aborted,
@@ -228,36 +252,18 @@ class Engine:
                 "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
                 "faults_injected": [f.describe() for f in faults],
                 "prediction": pred, "prediction_check": check,
-                "stuck_services": stuck, "stuck_details": stuck_details}
-        self._record_observation(exp, result, t_inject, time.time())
+                "stuck_services": stuck, "stuck_details": stuck_details,"observation": observation}
+        self._save_observation(observation)
         return result
 
-    def _record_observation(self, exp, result, t_start, t_end):
-        """Use the existing Section 8/9 Knowledge Store channel, not new state keys.
-
-        Events cover injection through recovery/rescue. Probe rates are explicitly
-        the fault-window rates from the engine. Canary measurements stay unknown.
-        """
+    def _save_observation(self, observation):
+        """Hand the Observer's summary to the Knowledge Store (the Diagnostician and Executor read it from there)."""
         try:
-            observed = observer.summary(t_start, t_end, cfg=dict(self.cfg, experiment=exp["id"]),
-                                        prober=self.prober)
-            summary = {"experiment": exp["id"],
-                       "mttd_s": min((p["time_to_first_error_s"] for p in result["probes"].values()
-                                      if p.get("time_to_first_error_s") is not None), default=None),
-                       "mttr_s": result["recovery_s"],
-                       "probe_error_rate": {n: p["error_rate"] for n, p in result["probes"].items()},
-                       "delivery": {"accepted": result["delivery"]["sent"],
-                                    "delivered": result["delivery"]["delivered"], "canary_lag_s": None},
-                       "queue_depth": observed.get("queue_depth") or {"start": None, "end": None},
-                       "events": observed.get("events") or [],
-                       "new_log_templates": observed.get("new_log_templates") or {},
-                       "kill_switch": result["abort_reason"], "stuck_services": result["stuck_services"]}
             with KnowledgeStore() as store:
-                store.save_observation(summary)
-            LIVE.event("info", f"[Observer] {exp['id']} summary saved for diagnosis")
-        except Exception as exc:
-            # Measurement/storage errors must never change fault restoration or result contracts.
-            LIVE.event("warn", f"[Observer] summary unavailable ({type(exc).__name__}); engine evidence retained")
+                store.save_observation(observation)
+            LIVE.event("info", f"[Observer] {observation['experiment']} summary saved for diagnosis")
+        except Exception as exc:  # noqa: BLE001 - measuring/storing must never change fault restoration or the result contract
+            LIVE.event("warn", f"[Observer] summary not saved ({type(exc).__name__}); engine evidence retained")
 
     def _stopped(self):
         """Services whose container is NOT running right now (crashed, killed or exited)."""

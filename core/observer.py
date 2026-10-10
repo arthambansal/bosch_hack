@@ -131,10 +131,64 @@ def docker_events(t_start, t_end, project="chaos"):
 
     return events
 
+def collect_log_templates(
+    cfg, t_start, t_end=None, healthy_templates=None
+):
+    """Collect service logs for a time window and return unseen log templates."""
+    import subprocess
+
+    healthy_templates = healthy_templates or {}
+    new_templates = {}
+
+    for name, service in cfg.get("services", {}).items():
+        container = service.get("container")
+        if not container:
+            continue
+
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "logs",
+                    "--since", str(max(0, int(t_start))),
+                    "--until", str(max(int(t_start), int(t_end)))
+                        if t_end is not None else "now",
+                    container,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+
+        lines = (result.stdout + "\n" + result.stderr).splitlines()
+        observed = mine_log_templates(lines)
+        known = set(healthy_templates.get(name, []))
+        unseen = sorted(template for template in observed if template not in known)
+
+        if unseen:
+            new_templates[name] = unseen
+
+    return new_templates
+
 
 def summary(
-    t_start, t_end, cfg=None, prober=None,
-    healthy=None, canary_result=None
+    t_start,
+    t_end,
+    cfg=None,
+    prober=None,
+    healthy=None,
+    canary_result=None,
+    queue_start=None,
+    queue_end=None,
+    accepted_count=None,
+    delivered_count=None,
+    kill_switch=None,
+    stuck_services=None,
+    mttd_s=None,
+    mttr_s=None,
+    healthy_templates=None,
 ):
     """Return a best-effort observation summary for the requested time range.
 
@@ -157,9 +211,8 @@ def summary(
     metrics["probe_error_rate"] = probe_errors
 
     queue_check = cfg.get("backlog_check")
-    queue_start = queue_end = None
-    if queue_check:
-        # Use the existing read-only probe helper for current queue depth.
+
+    if queue_check and queue_end is None:
         try:
             from .probes import backlog
             queue_end = backlog(cfg)
@@ -172,36 +225,59 @@ def summary(
     } if queue_check else None
 
     anomalies = detect_anomalies(metrics, healthy)
-
-    return {
-        "experiment": cfg.get("experiment", "unknown"),
-        "t_start": t_start,
-        "t_end": t_end,
-        "probe_error_rate": probe_errors,
-        "delivery": {
-        "accepted": (
+    accepted = (
+        accepted_count
+        if accepted_count is not None
+        else (
             canary_result.get("accepted")
             if canary_result is not None
             else getattr(prober, "votes_ok", None)
-        ),
-        "delivered": (
+        )
+    )
+
+    delivered = (
+        delivered_count
+        if delivered_count is not None
+        else (
             canary_result.get("delivered")
             if canary_result is not None
             else None
-        ),
+        )
+    )
+
+    delivery = {
+        "accepted": accepted,
+        "delivered": delivered,
         "canary_lag_s": (
             canary_result.get("canary_lag_s")
             if canary_result is not None
             else None
         ),
-    },
+    }
+
+    new_log_templates = collect_log_templates(
+        cfg,
+        t_start,
+        t_end=t_end,
+        healthy_templates=healthy_templates,
+    )
+
+    return {
+        "experiment": cfg.get("experiment", "unknown"),
+        "t_start": t_start,
+        "t_end": t_end,
+        "mttd_s": mttd_s,
+        "mttr_s": mttr_s,
+        "probe_error_rate": probe_errors,
+        "delivery": delivery,
         "queue_depth": metrics["queue_depth"],
         "events": events,
-        "new_log_templates": {},
+        "new_log_templates": new_log_templates,
         "anomalies": anomalies,
-        "kill_switch": None,
-        "stuck_services": [],
+        "kill_switch": kill_switch,
+        "stuck_services": stuck_services or [],
     }
+
 
 def trace_canary(cfg=None, timeout_s=8.0):
     """Send one uniquely identified test vote and check PostgreSQL for it.
