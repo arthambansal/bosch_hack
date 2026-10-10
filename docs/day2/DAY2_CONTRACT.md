@@ -118,9 +118,13 @@ the time the memory path took now (measured, not estimated).
 [{"id": "restart-policy", "title": "Restart crashed containers", "kind": "compose | code_suggestion",
   "for": ["E1", "E2"], "why": "one or two sentences with numbers", "diff": "unified diff text or null",
   "status": "proposed | applied | verified | not_improved | rolled_back",
-  "rpn": [{"id": "E2", "before": 270, "after": 30}]}]
+  "rpn": [{"id": "E2", "before": 270, "after": 30}],
+  "rollback_failed": false, "worse": null}]
 ```
 `code_suggestion` entries are always `proposed` (never applied).
+`rollback_failed: true` = the fix made a row worse (`worse = {"id": "E3", "before": 630, "after": 700}`) but docker could
+not undo it, so it is STILL running: `status` stays `applied`. Show it as a red "rollback failed" badge. Otherwise
+`rollback_failed` is `false` and `worse` is `null`. A successful undo is `status: rolled_back`.
 
 ### 4.5 `impact` — function by Tejas (`core/report_extras.impact_of`), published by Artham after each experiment
 ```json
@@ -264,3 +268,9 @@ Canary votes use ids that start with `canary-`. **Every vote count must exclude 
 | 7:30 | Results: accuracy table, predictions scorecard, before/after score, report | Tejas |
 | 8:30 | Limits we state honestly + what's next | Tejas |
 | 9:00 | Close: "Find, prove, fix, prevent." Questions | Artham |
+
+## Run lifecycle (live_state reset)
+`agentic.runtime.start()` calls `LIVE.reset_run(baseline)` before every run. Only `graph`, `thresholds` and `gate_sync`
+survive; every other key is dropped and re-published by the new run (`phase`, `events`, `queue`, `probes`, `faulted`,
+`guard`, `experiment`, `score`, `findings` restart at empty defaults; `baseline` is re-read from baseline.json).
+

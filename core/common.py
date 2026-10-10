@@ -139,20 +139,19 @@ class Live:
             self.state.update(kw)
         self.flush()
 
-    RUN_DEFAULTS = {"events": [], "queue": [], "guard": {}, "experiment": None, "score": None, "findings": None, "faulted": []}
-    RUN_KEYS = ("fixes", "fmea", "fmea_compare", "impact", "predictions", "plan_ranking", "threat_model", "memory",
-                "mystery", "regression", "truth")
+    # Everything NOT listed here is run evidence and is dropped when a new run starts (whitelist, so a key added later
+    # is reset automatically instead of leaking into the next run).
+    GLOBAL_KEYS = ("graph", "thresholds", "gate_sync")
+    RUN_DEFAULTS = {"phase": "idle", "events": [], "queue": [], "probes": {}, "faulted": [], "guard": {},
+                    "experiment": None, "score": None, "findings": None}
 
     def reset_run(self, baseline=None):
-        """Forget the previous run's evidence. Global catalogs (graph, thresholds, probes) stay."""
+        """Forget the previous run's evidence. Only global catalogs (graph, thresholds, gate_sync) survive.
+        `baseline` is the saved baseline.json this run will compare against (an input, re-published fresh)."""
         with self.lock:
-            for key, value in self.RUN_DEFAULTS.items():
-                self.state[key] = json.loads(json.dumps(value))
-            for key in self.RUN_KEYS:
-                self.state.pop(key, None)
-            if baseline is None:
-                self.state.pop("baseline", None)
-            else:
+            kept = {k: self.state[k] for k in self.GLOBAL_KEYS if k in self.state}
+            self.state = {**json.loads(json.dumps(self.RUN_DEFAULTS)), **kept}
+            if baseline is not None:
                 self.state["baseline"] = baseline
         self.flush()
 

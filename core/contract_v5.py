@@ -99,6 +99,12 @@ def validate_fixes(fixes):
                 p.append(f"fixes[{i}].kind invalid")
             if f.get("status") not in {"proposed", "applied", "verified", "not_improved", "rolled_back"}:
                 p.append(f"fixes[{i}].status invalid")
+            if "rollback_failed" in f and not isinstance(f["rollback_failed"], bool):
+                p.append(f"fixes[{i}].rollback_failed must be true/false")
+            if f.get("rollback_failed") and f.get("status") != "applied":
+                p.append(f"fixes[{i}]: rollback_failed means the fix is still applied")
+            if f.get("rollback_failed") and not isinstance(f.get("worse"), dict):
+                p.append(f"fixes[{i}]: rollback_failed needs worse={{id, before, after}}")
             if f.get("kind") == "code_suggestion" and f.get("status") != "proposed":
                 p.append(f"fixes[{i}]: code suggestions are never applied")
     return p

@@ -86,11 +86,15 @@ def publish_fixes(fixes, statuses, cmp, investigations=None, results=()):
     by_row = {c["id"]: c for c in cmp}
     entries = fix_entries([{**f, "status": "applied"} for f in fixes])   # state fixes carry no status; fix_entries only lists applied ones
     for e in entries:
-        e["status"] = (statuses.get(e["id"]) or {}).get("status", e.get("status", "applied"))
+        verdict = statuses.get(e["id"]) or {}
+        e["status"] = verdict.get("status", e.get("status", "applied"))
+        e["rollback_failed"] = bool(verdict.get("rollback_failed"))      # made things worse AND docker could not undo it
+        worse = verdict.get("worse") if e["rollback_failed"] else None
+        e["worse"] = {"id": worse["id"], "before": worse["rpn_before"], "after": worse["rpn_after"]} if worse else None
         e["rpn"] = [{"id": r, "before": by_row[r]["rpn_before"], "after": by_row[r]["rpn_after"]}
                     for r in e.get("for", []) if r in by_row]
     try:
-        entries += [dict(x, status="proposed") for x in (suggest_patches(investigations or {}, list(results)) or [])]
+        entries += [dict(x, status="proposed", rollback_failed=False, worse=None) for x in (suggest_patches(investigations or {}, list(results)) or [])]
     except Exception as exc:  # noqa: BLE001 - suggestions are a bonus
         LIVE.event("warn", f"[Verifier] code suggestions skipped ({type(exc).__name__})")
     LIVE.set(fixes=entries)
