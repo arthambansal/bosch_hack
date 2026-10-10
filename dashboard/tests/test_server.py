@@ -19,7 +19,7 @@ spec.loader.exec_module(server)
 class ControlServerTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(prefix="chaospilot-dashboard-test-")
-        self.root = Path(self.folder.name)
+        self.root = Path(os.path.realpath(self.folder.name))        # macOS temp dirs live behind a symlink (/var -> /private/var); the server rejects symlinked roots
         (self.root / "runs").mkdir()
         self.paths = patch.multiple(server, ROOT=str(self.root), STATE=str(self.root / "runs/live_state.json"), APPROVAL=str(self.root / "runs/approval.json"), STOP=str(self.root / "STOP"))
         self.paths.start()
