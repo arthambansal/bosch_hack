@@ -90,6 +90,16 @@ checks["dashboard entry: rollback_failed and untested together"] = (pub[0]["roll
 checks["contract rejects a malformed untested"] = validate_fixes([dict(entry, untested="E5")]) != []
 ex.publish_fixes = lambda fixes, statuses, cmp, inv=None, res=(): published.update(statuses)
 
+# 2c) wait_loop publishes its pid (the dashboard Start button uses it) and removes it on exit
+import core.mystery as mm  # noqa: E402
+
+mm.REQUEST_FILE = os.path.join(tempfile.mkdtemp(), "mystery_request.json")
+seen = {}
+mm._wait_loop = lambda *a, **k: seen.update(pid=open(mm._consumer_file()).read())
+mm.wait_loop({}, {})
+checks["mystery wait loop: pid file written while running"] = seen.get("pid") == str(os.getpid())
+checks["mystery wait loop: pid file removed on exit"] = not os.path.exists(mm._consumer_file())
+
 # 3) mystery request: claimed once, and the state turns non-idle before the lock is released
 import core.mystery as m  # noqa: E402
 

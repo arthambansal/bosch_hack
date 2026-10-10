@@ -8,6 +8,7 @@ import math
 import os
 import sys
 import re
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,8 @@ ROOT = os.path.dirname(HERE)
 STATE = os.path.join(ROOT, "runs", "live_state.json")
 APPROVAL = os.path.join(ROOT, "runs", "approval.json")
 STOP = os.path.join(ROOT, "STOP")
+CONSUMER_PID = os.path.join(ROOT, "runs", "mystery_consumer.pid")
+CONSUMER_LOG = os.path.join(ROOT, "runs", "mystery_consumer.log")
 MAX_BODY = 4096
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -118,6 +121,34 @@ def run_summaries():
         except ValueError:
             continue
     return sorted(summaries, key=lambda row: row["started_at"], reverse=True)
+
+
+def mystery_consumer_alive():
+    """Is `chaospilot.py mystery --wait` already running (from a terminal or from this button)?"""
+    try:
+        pid = int(Path(CONSUMER_PID).read_text().strip())
+        os.kill(pid, 0)
+        command = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=3).stdout
+        return "chaospilot" in command and "mystery" in command          # a reused pid of some other program does not count
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+
+
+def start_mystery_consumer():
+    """Dashboard button: start the fixed command `chaospilot.py mystery --wait --up` (nothing from the browser is used in it)."""
+    if mystery_consumer_alive():
+        return 200, {"already_running": True}
+    if os.path.exists(STOP):
+        return 409, {"error": "stop_file_present"}
+    try:
+        os.makedirs(os.path.dirname(CONSUMER_PID), exist_ok=True)
+        with open(CONSUMER_LOG, "ab") as log:
+            process = subprocess.Popen([sys.executable, os.path.join(ROOT, "chaospilot.py"), "mystery", "--wait", "--up"],
+                                       cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        Path(CONSUMER_PID).write_text(str(process.pid))
+    except OSError:
+        return 500, {"error": "mystery_start_failed"}
+    return 202, {"started": True}
 
 
 def mystery_submission(payload):
@@ -245,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
-        if path not in {"/approve", "/stop", "/mystery"}:
+        if path not in {"/approve", "/stop", "/mystery", "/mystery/start"}:
             self.json_reply(404, {"error": "not_found"})
             return
         if not self.local_mutation():
@@ -253,6 +284,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         payload = self.read_payload()
         if payload is None:
+            return
+        if path == "/mystery/start":
+            if payload:
+                self.json_reply(400, {"error": "empty_body_required"})
+                return
+            status, body = start_mystery_consumer()
+            self.json_reply(status, body)
             return
         if path == "/mystery":
             status, body = mystery_submission(payload)
