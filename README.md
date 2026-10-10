@@ -12,62 +12,60 @@ This project is licensed under Apache-2.0. The sandbox voting application is
 the Docker Samples Example Voting App, licensed under Apache-2.0; see
 `sandbox/app-src` and its upstream repository for its original notices.
 
-ChaosPilot tests resilience in an isolated Docker Example Voting App.
-Cartographer reads source and proposes testable weaknesses; Experimenter selects faults.
-Deterministic safety checks govern injection, recovery and FMEA scoring.
-Diagnostician explains observed failures; Remediator proposes fixes; verification compares risk.
-Reporter turns measured outcomes into impact, postmortems and replayable regression scenarios.
-
 ## Four proofs
 
-| Proof | Mechanism | Evidence status in this checkout |
+| Proof | Mechanism | Evidence in this repo |
 |---|---|---|
-| Truth Oracle | Unique canary votes compared with stored votes | Team interface/wiring present; real golden-run evidence pending |
-| Blind mystery diagnosis | Hidden injection, evidence-only guess, reveal and accuracy history | Harness present; no local measured trial history supplied |
-| Fix with proof and rollback | Deterministic RPN comparison and per-fix verdict | Mock-tested; cited teammate run artifacts pending |
-| Never again | Confirmed-failure export, engine replay, invariant checks, CI workflow | Offline tests pass; live replay and GitHub Actions not yet verified |
+| Truth Oracle | Unique canary votes compared with stored votes (gray failures) | `core/truth.py`, `tests/test_truth.py`; live golden run pending |
+| Blind mystery diagnosis | Hidden injection, evidence-only guess, reveal, accuracy history | `docs/day2/MYSTERY_RESULTS.md` (small samples, failures kept) |
+| Fix with proof and rollback | Re-run after a fix, per-fix verdict from the RPN comparison, automatic undo | `auto_20261010_170117/verification.json`, `docs/day2/E3_ANALYSIS.md` |
+| Never again | Confirmed failure exported as a scenario, replayed with invariant checks | `scenarios/`, `tests/test_regression.py` |
 
-## Quick start from a fresh clone
+## Quick start from a fresh clone (macOS / Linux)
 
-Install Git, Docker Desktop with Compose, and Python 3.10+ (3.11 recommended).
-Then run:
+Needs Git, Docker Desktop (with Compose), Python 3.10+ and Node 20.19+ (for the dashboard).
 
-```powershell
+```bash
 git clone https://github.com/arthambansal/bosch_hack.git
 cd bosch_hack
-git checkout tejas
-docker compose version
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+docker pull nicolaka/netshoot                   # helper image for the latency fault
+(cd dashboard && npm ci && npm run build)       # builds the Control Room once
+# optional: lets the Cartographer read the app's source code
 git clone https://github.com/dockersamples/example-voting-app sandbox/app-src
-$env:GROQ_API_KEY = "paste-your-key-here"
 ```
 
-The key is read only from the environment; never put it in a file or commit it.
-An API key is optional for mock tests, replay, and the deterministic fallback.
-On POSIX, activate with `source .venv/bin/activate` and export it with
-`export GROQ_API_KEY="paste-your-key-here"`. The source checkout remains gitignored.
+AI models (Groq, OpenAI-compatible API). Set these in your shell only; never put the key in a file or a commit:
 
-Run the local checks before a push:
-
-```powershell
-python tests/test_contract_v5.py
-python tests/test_graph_mock.py
-python tests/test_regression.py
-python tests/test_report_v2.py
+```bash
+export OPENAI_API_KEY="your-groq-key"
+export OPENAI_BASE_URL="https://api.groq.com/openai/v1"
+export LLM_MODEL="openai/gpt-oss-120b"          # Experimenter, Remediator, Reporter
+export LLM_AGENT_MODEL="openai/gpt-oss-20b"     # tool-using Cartographer and Diagnostician
 ```
 
-For an isolated live sandbox:
+Without a key every agent falls back to its deterministic rules, and `--offline` replays the last saved AI answers
+from `runs/llm_cache`. On Windows PowerShell use `.\.venv\Scripts\Activate.ps1` and `$env:OPENAI_API_KEY = "..."`.
 
-```powershell
-python chaospilot.py up
-python chaospilot.py map
-python chaospilot.py baseline --seconds 15
-python chaospilot.py dashboard
-python chaospilot.py autopilot --max 5 --approve
-python chaospilot.py mystery --trials 3
+Checks (no Docker needed):
+
+```bash
+for t in tests/test_*.py; do PYTHONPATH=. python3 "$t" || break; done
 ```
+
+Live run on the isolated sandbox (two terminals):
+
+```bash
+python3 chaospilot.py up                        # start the voting app (Docker Compose)
+python3 chaospilot.py map                       # discover services and dependencies
+python3 chaospilot.py baseline --seconds 15     # normal error rate and latency
+python3 chaospilot.py dashboard                 # terminal 2: open http://127.0.0.1:8000
+python3 chaospilot.py autopilot --max 5 --approve
+python3 chaospilot.py mystery --trials 3        # hidden faults, blind diagnosis
+```
+
+Stop everything at any time: dashboard Emergency stop, or `touch STOP`, or `python3 chaospilot.py panic`.
 
 Reports are written under `runs/auto_*/report.md` and `report.html`. Baseline comes
 before faults. Obtain human approval for data-store disruption; the main pipeline
@@ -136,20 +134,17 @@ and applies to the experiments observed, not a universal reliability guarantee.
 
 ## Results and honest limits
 
-| Available real evidence | Measurement |
-|---|---|
-| Day 1 healthy baseline, 15 s | 31 accepted / 31 delivered |
-| Day 1 approved Redis kill | 24 accepted / 24 delivered; no stuck worker |
-| Guard fault window / HTTP recovery after restoration | 4.5 s / 1.5 s |
-| Single-test RPN / resilience score | 98 / 95 out of 100 |
+Real run `auto_20261010_170117` (files in the repo root folder of that name; summary in `docs/FINDINGS.md`):
 
-These preserved records are in `docs/evidence/e1/`. They describe that trial only.
-Day 2 assignment claims (worker exit 1, combined loss 17/40, E2 RPN 270 to 30) await
-raw teammate run artifacts and are not included as locally verified results. See
-`docs/FINDINGS.md`. Outage duration uses an explicitly labelled fault-window proxy
-when intervals are unavailable; unknown measurements remain null. Trial-history
-accuracy, regression CI, real fix verification, golden video and official submission
-remain pending evidence. Mock runs are simulations and must never be cited as live results.
+| Finding | Measurement |
+|---|---|
+| Resilience score | 61/100 (grade D) before fixes |
+| Worker crash after a Redis pause (E2) | RPN 270 -> 30 after the restart-policy fix (verified) |
+| Postgres kill (E3) | RPN 630 -> 700: the generic fix did not help; see `docs/day2/E3_ANALYSIS.md` |
+
+The score covers only the experiments that were run, not a guarantee for the whole system. Mystery accuracy is
+measured on small samples and reported with every wrong answer (`docs/day2/MYSTERY_RESULTS.md`). Mock tests are
+simulations and are never cited as live results.
 
 ## Team
 
