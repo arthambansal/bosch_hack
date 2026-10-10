@@ -66,6 +66,30 @@ heal.apply_fixes = lambda fixes, cfg: True
 out = ex.verify_node(state)
 checks["good rollback: rolled_back + rolled_back alert"] = out["rolled_back"] == ["F1"] and out["fixes"] == [] and sent == ["fix_rolled_back"]
 
+# 2b) "untested" evidence must survive BOTH rollback-failure paths (docker failed, and STOP present)
+res = lambda i: {"id": i, "name": "n", "steps": [], "reason": "", "hypothesis": "", "predicted_probes": []}
+state2 = {"fixes": [{"id": "F1", "rows": ["E1", "E5"]}], "results": [res("E1"), res("E5")],
+          "fmea": [{"id": "E1"}, {"id": "E5"}], "baseline": {}, "investigations": {}}      # E5 has no comparison row
+for label, stop in (("docker could not undo it", False), ("STOP present", True)):
+    published.clear()
+    sent.clear()
+    stop_path = os.path.join(tempfile.mkdtemp(), "STOP")
+    if stop:
+        open(stop_path, "w").close()
+    ex.STOP_FILE = stop_path
+    heal.apply_fixes = lambda fixes, cfg: False
+    out = ex.verify_node(state2)
+    v = published["F1"]
+    checks[f"rollback failed ({label}): keeps untested E5"] = v["status"] == "applied" and v["rollback_failed"] is True and v.get("untested") == ["E5"]
+    checks[f"rollback failed ({label}): keeps worse E1"] = (v.get("worse") or {}).get("id") == "E1"
+ex.STOP_FILE = os.path.join(tempfile.mkdtemp(), "STOP")
+ex.publish_fixes = ORIG_PUBLISH
+pub = ex.publish_fixes([{"id": "F1", "rows": ["E1", "E5"]}], {"F1": {"status": "applied", "rollback_failed": True, "worse": row, "untested": ["E5"]}}, [row])
+checks["dashboard entry: rollback_failed and untested together"] = (pub[0]["rollback_failed"] is True and pub[0]["untested"] == ["E5"]
+    and pub[0]["worse"]["id"] == "E1" and validate_fixes(pub) == [])
+checks["contract rejects a malformed untested"] = validate_fixes([dict(entry, untested="E5")]) != []
+ex.publish_fixes = lambda fixes, statuses, cmp, inv=None, res=(): published.update(statuses)
+
 # 3) mystery request: claimed once, and the state turns non-idle before the lock is released
 import core.mystery as m  # noqa: E402
 
