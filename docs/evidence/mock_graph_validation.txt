@@ -1,0 +1,70 @@
+[37m[14:43:33] AUTOPILOT start. Goal: what if redis dies?[0m
+[96m[14:43:33] [Cartographer] single points of failure: ['redis', 'db'][0m
+[37m[14:43:33] [graph] cartographer done[0m
+[96m[14:43:33] AGENT step 1: (rule-based fallback) kill redis[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[92m[14:43:33] [Governor] approved E1 kill redis[0m
+[37m[14:43:33] [graph] governor done[0m
+[37m[14:43:33] [graph] approval done[0m
+[37m[14:43:33] [graph] execute done[0m
+[37m[14:43:33] [graph] evaluate done[0m
+[96m[14:43:33] [Diagnostician] E1 root cause: worker crashed during the fault and has no restart policy, so it stayed down[0m
+[37m[14:43:33] [graph] diagnostician done[0m
+[96m[14:43:33] AGENT step 2: (rule-based fallback) partition db[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[92m[14:43:33] [Governor] approved E2 partition db[0m
+[37m[14:43:33] [graph] governor done[0m
+[37m[14:43:33] [graph] approval done[0m
+[37m[14:43:33] [graph] execute done[0m
+[37m[14:43:33] [graph] evaluate done[0m
+[96m[14:43:33] AGENT step 3: (rule-based fallback) pause vote[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[92m[14:43:33] [Governor] approved E3 pause vote[0m
+[37m[14:43:33] [graph] governor done[0m
+[37m[14:43:33] [graph] approval done[0m
+[37m[14:43:33] [graph] execute done[0m
+[37m[14:43:33] [graph] evaluate done[0m
+[96m[14:43:33] AGENT step 4: (rule-based fallback) latency redis[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[92m[14:43:33] [Governor] approved E4 latency redis[0m
+[37m[14:43:33] [graph] governor done[0m
+[37m[14:43:33] [graph] approval done[0m
+[37m[14:43:33] [graph] execute done[0m
+[37m[14:43:33] [graph] evaluate done[0m
+[96m[14:43:33] AGENT step 5: (rule-based fallback) spike result[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[92m[14:43:33] [Governor] approved E5 spike result[0m
+[37m[14:43:33] [graph] governor done[0m
+[37m[14:43:33] [graph] approval done[0m
+[37m[14:43:33] [graph] execute done[0m
+[37m[14:43:33] [graph] evaluate done[0m
+[96m[14:43:33] AGENT step 6: (rule-based fallback) COMBINED: worker down, then redis crash[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[92m[14:43:33] [Governor] approved E6 COMBINED: worker down, then redis crash (needs human sign-off)[0m
+[37m[14:43:33] [graph] governor done[0m
+[92m[14:43:33] [Human] approved E6[0m
+[37m[14:43:33] [graph] approval done[0m
+[37m[14:43:33] [graph] execute done[0m
+[37m[14:43:33] [graph] evaluate done[0m
+[96m[14:43:33] [Diagnostician] E6 root cause: worker crashed during the fault and has no restart policy, so it stayed down[0m
+[37m[14:43:33] [graph] diagnostician done[0m
+[37m[14:43:33] [graph] experimenter done[0m
+[96m[14:43:33] [Remediator] (rules) applying redis-durable for ['E1', 'E6']: The queue lost accepted work when it crashed. Turn on append-only persistence (fsync always).[0m
+[96m[14:43:33] [Remediator] (rules) applying restart-policy for ['E1', 'E6']: Crashed containers stayed down until a human restarted them. Add `restart: unless-stopped`.[0m
+[37m[14:43:33] [graph] remediator done[0m
+[37m[14:43:33] [Verifier] re-running E1 against the fixed system[0m
+[37m[14:43:33] [Verifier] re-running E6 against the fixed system[0m
+[92m[14:43:33] [Verifier] E1 RPN 700 -> 98 (86% lower)[0m
+[92m[14:43:33] [Verifier] E6 RPN 600 -> 84 (86% lower)[0m
+[37m[14:43:33] [graph] verify done[0m
+[92m[14:43:33] [Reporter] report written: C:\Users\Admin\Documents\Codex\2026-10-10\referenced-chatgpt-conversation-this-is-an-3\tejas-fresh\runs\auto_20261010_144333\report.md (resilience 48/100, grade F)[0m
+[37m[14:43:33] [graph] reporter done[0m
+[95m[14:43:33] [Governor] REJECTED EX double kill: would take down 2 data stores at once (db, redis); policy allows one[0m
+PASS ran 3+ experiments
+PASS human approval was asked
+PASS diagnostician ran on bad results
+PASS fixes applied
+PASS verification improved
+PASS report written
+PASS safety rejects double data-store kill
+ALL CHECKS PASSED
