@@ -1,0 +1,20 @@
+{
+  "run_status": "completed",
+  "phase": "ran",
+  "run_dir": "fixture_rollback_failure",
+  "events": [],
+  "fixes": [
+    {
+      "id": "fixture-worker-fix",
+      "title": "Worker fix — static rollback failure example",
+      "kind": "compose",
+      "for": ["E3"],
+      "why": "Static demonstration evidence: risk increased and rollback did not complete.",
+      "diff": null,
+      "status": "applied",
+      "rpn": [{"id": "E3", "before": 630, "after": 700}],
+      "rollback_failed": true,
+      "worse": {"id": "E3", "before": 630, "after": 700}
+    }
+  ]
+}

@@ -4,6 +4,7 @@ const loaders = Object.freeze({
   gray_failure: () => import('../fixtures/gray_failure.json'),
   idle: () => import('../fixtures/idle.json'),
   mystery_revealed: () => import('../fixtures/mystery_revealed.json'),
+  rollback_failed: () => import('../fixtures/rollback_failed.json'),
 });
 export const FIXTURE_NAMES = Object.freeze(Object.keys(loaders));
 export function fixtureSelection(search = '') {

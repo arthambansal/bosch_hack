@@ -655,6 +655,9 @@ h1 > span { color: #9a633e; }
 .fix-status { display: inline-block; padding: 4px 9px; color: #374e43; background: #e7eee4; font-size: 12px; border-radius: 6px; white-space: nowrap; }
 .status-verified { background: #e0efe2; color: #254e34; }
 .status-rolled_back, .status-not_improved { background: #faeddd; color: #794a22; }
+.status-rollback-failed { background: #a12d25; color: #fff; font-weight: 800; }
+.rollback-failure { padding: 12px; margin-bottom: 12px; border: 1px solid #d79590; border-left: 4px solid var(--critical); border-radius: 6px; background: #fff2f0; }
+.rollback-failure > p:first-child { color: #8c2b24; font-weight: 700; }
 .plan-selected { background: #edf4e9; }
 .plan-selected .fix-status { margin-left: 8px; }
 .p1-panel .evidence-table { min-width: 0; }
