@@ -8,6 +8,7 @@ told to use ONLY numbers present in the state; keep this deterministic version a
 import os
 
 from core.common import LIVE
+from core.recommend import build as build_fix_table, render as render_fix_table, markdown as fix_table_markdown
 from core.regression import export_scenario, list_scenarios
 from core.report_extras import executive_summary, timing_markdown, fault_tree_markdown, write_html, day2_sections
 
@@ -71,6 +72,8 @@ def reporter_node(state):
     if ver.get("compare"):
         L += ["", "## Before vs after (Verifier)", "", "| ID | Failure mode | RPN before | RPN after | Reduction |", "|---|---|---|---|---|"]
         L += [f"| {c['id']} | {c['failure_mode']} | {c['rpn_before']} | {c['rpn_after']} | {c['reduction_pct']}% |" for c in ver["compare"]]
+    fix_rows = build_fix_table(state, report_state.get("fixes") if LIVE.state.get("run_dir") == run_dir() else None)
+    L += [""] + fix_table_markdown(fix_rows)
     if state.get("recommendations"):
         L += ["", "## Further recommendations (manual, not auto-applied)"] + [f"- {r.get('problem')}: {r.get('recommendation')}" for r in state["recommendations"]]
     L += [""] + timing_markdown(state.get("results", []))
@@ -83,4 +86,5 @@ def reporter_node(state):
     LIVE.event("ok", f"[Reporter] report written: {path} (resilience {score}/100, grade {grade})")
     LIVE.set(score={"overall": score, "grade": grade, "after": after_score})
     return {"report": {"path_md": path, "resilience_score": score, "grade": grade,
-                       "after": after_score[0] if after_score else None, "summary": summary}}
+                       "after": after_score[0] if after_score else None, "summary": summary,
+                       "fix_table": render_fix_table(fix_rows)}}
