@@ -37,6 +37,10 @@ Candidates (id, risk, probes it should break):
 
 Already run (results so far): {history}
 
+Findings from the other agents (recon threat model, root-cause investigations, safety reviewer feedback, user goal).
+Use them: test the recon hypotheses, dig into investigated root causes, and if a user goal is given design the experiment to answer it:
+{extra}
+
 Reply:
 {{"action": "run" | "finish",
   "steps": [{{"candidate": "kill:redis", "delay_s": 0}}],
@@ -49,8 +53,9 @@ Reply:
 class Agent:
     """Callable used by Engine.run_agent: agent(results_so_far) -> next experiment dict, or None to stop."""
 
-    def __init__(self, cfg, graph, baseline, offline=False):
+    def __init__(self, cfg, graph, baseline, offline=False, extra=None):
         self.cfg, self.graph, self.baseline, self.offline = cfg, graph, baseline, offline
+        self.extra = extra or {}
         self.cands = candidates(cfg, graph)
         self.by_id = {c["id"]: c for c in self.cands}
         self.fallback = heuristic_plan(cfg, graph, self.cands, cfg.get("max_experiments", 6))
@@ -80,7 +85,8 @@ class Agent:
             baseline=json.dumps((self.baseline or {}).get("probes", {})),
             cands="\n".join(f"- {c['id']} (risk {c['risk_score']}, breaks: {c['predicted_probes'] or 'none'})"
                             for c in self.cands),
-            history=json.dumps(self._history(results)) if results else "nothing yet, this is the first experiment")
+            history=json.dumps(self._history(results)) if results else "nothing yet, this is the first experiment",
+            extra=json.dumps(self.extra, default=str)[:3500])
         data, source = ask_json(f"agent_step{self.n}", SYSTEM, user, offline=self.offline, max_tokens=900)
         if not data:
             return self._fallback()

@@ -4,6 +4,7 @@ A Prober runs one background thread per probe (config.json -> probes). Each thre
 every 0.5s and records (start_time, ok, latency_ms, status). This is both our "steady load" and our
 monitoring signal. Votes that were accepted are counted so we can later check none were lost.
 """
+import random
 import threading
 import time
 
@@ -38,7 +39,7 @@ class Prober:
         t = time.time()
         try:
             if p.get("method", "GET") == "POST":
-                r = requests.post(p["url"], data=p.get("data"), timeout=self.timeout)
+                r = requests.post(p["url"], data=({"vote": random.choice("ab")} if (p.get("data") or {}).get("vote") else p.get("data")), timeout=self.timeout)
             else:
                 r = requests.get(p["url"], timeout=self.timeout)
             lat = (time.time() - t) * 1000

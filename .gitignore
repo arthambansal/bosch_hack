@@ -6,4 +6,7 @@ __pycache__/
 *.pyc
 .env
 venv/
+threat_model.json
 .DS_Store
+sandbox/app-src/
+sandbox/fixes/generated/

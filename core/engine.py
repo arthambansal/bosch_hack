@@ -8,7 +8,7 @@ For each experiment:
 import os
 import time
 
-from .common import BASELINE_FILE, LATEST_FILE, LIVE, PLAN_FILE, RUNS_DIR, STOP_FILE, load_json, save_json
+from .common import BASELINE_FILE, LATEST_FILE, LIVE, PLAN_FILE, RUNS_DIR, STOP_FILE, docker, load_json, save_json
 from .faults import Fault, SafetyError, panic
 from .fmea import build_fmea
 from .probes import Prober, settled_count, summarize
@@ -171,6 +171,12 @@ class Engine:
 
         time.sleep(4)   # give crashed containers time to show as crashed
         stuck = self._stopped()
+        stuck_details = {}
+        for n in stuck:
+            c = self.cfg["services"][n]["container"]
+            _, code = docker("inspect", "-f", "{{.State.ExitCode}}", c)
+            _, logs = docker("logs", "--tail", "12", c, timeout=10)
+            stuck_details[n] = {"exit_code": code.strip(), "last_logs": [x[:200] for x in logs.splitlines()[-12:]]}
         if stuck:
             LIVE.event("guard", f"CASCADE FAILURE: {stuck} crashed and did NOT come back on their own "
                                 f"(probes look healthy, but the pipeline is silently broken)")
@@ -208,7 +214,7 @@ class Engine:
                 "recovery_s": recovery_s, "guard_log": guard_log[-10:],
                 "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
                 "prediction": pred, "prediction_check": check,
-                "stuck_services": stuck}
+                "stuck_services": stuck, "stuck_details": stuck_details}
 
     def _stopped(self):
         """Services whose container is NOT running right now (crashed, killed or exited)."""

@@ -7,6 +7,10 @@
   python chaospilot.py plan               AI ranks experiments -> plan.json   (--offline = replay cache)
   python chaospilot.py run                run the plan with kill switch       (--only E1,E2)
   python chaospilot.py agent              AUTONOMOUS agent: AI picks each next attack after seeing results
+  python chaospilot.py autopilot          MULTI-AGENT run (LangGraph): cartographer -> experimenter -> governor -> execute
+                                          -> investigator -> ... -> remediator -> verify -> reporter
+                                          [--goal "what if redis dies during a spike?"] [--approve] [--no-heal]
+  python chaospilot.py graph              print the agent graph as a Mermaid diagram (docs/agent_graph.md)
   python chaospilot.py report             score + AI post-mortem              (--compare <old run dir>)
   python chaospilot.py dashboard          live dashboard on http://localhost:8000
   python chaospilot.py heal               FMEA -> pick fixes -> apply -> re-run -> prove RPN dropped
@@ -70,11 +74,34 @@ def cmd_agent(a, cfg):
     print(f"\nNext: python chaospilot.py report   (run folder: {run_dir})")
 
 
+def cmd_autopilot(a, cfg):
+    from agentic import runtime
+    from agentic.graph import run
+    if a.max:
+        cfg["max_experiments"] = a.max
+    runtime.RT["cfg"] = cfg
+    final = run(goal=a.goal or "", require_approval=a.approve, offline=a.offline, heal=not a.no_heal)
+    rep = final.get("report") or {}
+    print(f"\nResilience score: {rep.get('resilience_score')}/100 (grade {rep.get('grade')})"
+          + (f" -> after fixes {rep.get('after')}/100" if rep.get("after") is not None else ""))
+    print(f"Report: {rep.get('path_md')}")
+
+
+def cmd_graph(a, cfg):
+    from agentic.graph import mermaid
+    text = mermaid()
+    os.makedirs(os.path.join(ROOT, "docs"), exist_ok=True)
+    with open(os.path.join(ROOT, "docs", "agent_graph.md"), "w") as f:
+        f.write("```mermaid\n" + text + "\n```\n")
+    print(text)
+
+
 def cmd_report(a, cfg):
     try:
         from core.report import build_report
     except ImportError:
-        sys.exit("core/report.py is not ready yet (Dipen's module)")
+        sys.exit("The standalone report command is retired. Run `python3 chaospilot.py autopilot`: "
+                 "the Reporter agent writes runs/<run>/report.md at the end.")
     run_dir = a.run_dir or latest_run_dir() or sys.exit("No run found. Run: python chaospilot.py run")
     LIVE.set(phase="reporting")
     build_report(run_dir, compare_dir=a.compare, offline=a.offline)
@@ -134,12 +161,16 @@ def cmd_demo(a, cfg):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["up", "map", "baseline", "plan", "run", "agent", "report", "heal", "dashboard", "panic", "demo"])
+    p.add_argument("command", choices=["up", "map", "baseline", "plan", "run", "agent", "autopilot", "graph", "report", "heal", "dashboard", "panic", "demo"])
     p.add_argument("--offline", action="store_true", help="use cached AI answers (no internet needed)")
     p.add_argument("--only", help="comma list of experiment ids, e.g. E1,E3")
     p.add_argument("--compare", help="earlier run folder for before/after comparison")
     p.add_argument("--run-dir", help="report on a specific run folder")
     p.add_argument("--seconds", type=int, default=30, help="baseline duration")
+    p.add_argument("--max", type=int, help="autopilot: maximum number of experiments (use 3 for a short demo)")
+    p.add_argument("--goal", help="autopilot: a what-if question for the agents to investigate")
+    p.add_argument("--approve", action="store_true", help="autopilot: ask a human before high-risk experiments")
+    p.add_argument("--no-heal", action="store_true", help="autopilot: report only, do not apply fixes")
     p.add_argument("--fix", nargs="*", help="fix files from sandbox/fixes/ to apply on `up`")
     a = p.parse_args()
     globals()["cmd_" + a.command](a, load_config())

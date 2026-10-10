@@ -13,6 +13,7 @@ cached answer, so the live demo never depends on venue Wi-Fi or API rate limits.
 import json
 import os
 import re
+import time
 
 import requests
 
@@ -75,7 +76,16 @@ def ask_json(kind, system, user, offline=False, max_tokens=2500):
         return None, "none"
     try:
         LIVE.event("ai", f"AI ({provider()}) thinking about: {kind} ...")
-        data = extract_json(_call(system, user, max_tokens))
+        for wait in (3, 8, 0):                       # free tiers rate-limit: back off and retry on HTTP 429
+            try:
+                text = _call(system, user, max_tokens)
+                break
+            except requests.HTTPError as e:
+                if e.response is None or e.response.status_code != 429 or not wait:
+                    raise
+                LIVE.event("warn", f"AI rate-limited, retrying in {wait}s")
+                time.sleep(wait)
+        data = extract_json(text)
         save_json(cache, data)
         return data, provider()
     except Exception as e:   # network, auth, rate limit, bad JSON: all fall back gracefully

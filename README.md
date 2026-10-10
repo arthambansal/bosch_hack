@@ -1,1 +1,0 @@
-# bosch_hack
