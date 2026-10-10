@@ -37,8 +37,10 @@ def severity(r, baseline):
     err, lost = _max(r, "error_rate"), _lost(r)
     if lost > 0:
         s, effect = 10, f"{lost} accepted votes silently lost (data integrity violated)"
-    elif r.get("recovery_s") is None:
-        s, effect = 9, "system did not recover on its own after the fault ended"
+    elif r.get("recovery_s") is None or r.get("stuck_services"):
+        stuck = r.get("stuck_services")
+        s, effect = 9, (f"cascade: {', '.join(stuck)} crashed and never restarted on their own" if stuck
+                        else "system did not recover on its own after the fault ended")
     elif err >= 0.9:
         s, effect = 8, f"near-total outage ({err:.0%} of requests failed)"
     elif err >= 0.5:
@@ -66,6 +68,8 @@ def occurrence(r):
 def detection(r, baseline):
     if _lost(r) > 0:
         return 10, "no live monitor sees lost data (only found by our post-run delivery audit)"
+    if r.get("stuck_services"):
+        return 10, "health pages look normal again; the crashed service is only visible by inspecting containers"
     times = [p["time_to_first_error_s"] for p in (r.get("probes") or {}).values()
              if p.get("time_to_first_error_s") is not None]
     if times:

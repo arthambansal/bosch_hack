@@ -6,6 +6,7 @@
   python chaospilot.py baseline           30s of steady traffic -> baseline.json
   python chaospilot.py plan               AI ranks experiments -> plan.json   (--offline = replay cache)
   python chaospilot.py run                run the plan with kill switch       (--only E1,E2)
+  python chaospilot.py agent              AUTONOMOUS agent: AI picks each next attack after seeing results
   python chaospilot.py report             score + AI post-mortem              (--compare <old run dir>)
   python chaospilot.py dashboard          live dashboard on http://localhost:8000
   python chaospilot.py heal               FMEA -> pick fixes -> apply -> re-run -> prove RPN dropped
@@ -60,6 +61,15 @@ def cmd_run(a, cfg):
     print(f"\nNext: python chaospilot.py report   (run folder: {run_dir})")
 
 
+def cmd_agent(a, cfg):
+    from core.agent import Agent
+    from core.engine import Engine
+    graph, base = need(DEPS_FILE, "map"), load_json(BASELINE_FILE, {})
+    eng = Engine(cfg, graph)
+    run_dir, _ = eng.run_agent(Agent(cfg, graph, base, offline=a.offline), max_steps=cfg.get("max_experiments", 6))
+    print(f"\nNext: python chaospilot.py report   (run folder: {run_dir})")
+
+
 def cmd_report(a, cfg):
     try:
         from core.report import build_report
@@ -77,7 +87,7 @@ def cmd_heal(a, cfg):
     import time
     from core.engine import Engine
     from core.fmea import build_fmea, compare_fmea, format_table
-    from core.heal import apply_fixes, select_fixes
+    from core.heal import advise_fixes, apply_fixes
     from core.common import save_json
     graph, plan = need(DEPS_FILE, "map"), need(PLAN_FILE, "plan")
     before_dir = a.run_dir or latest_run_dir() or sys.exit("No run found. Run: python chaospilot.py run")
@@ -85,11 +95,13 @@ def cmd_heal(a, cfg):
     base = load_json(BASELINE_FILE, {})
     before = build_fmea(results, base)
     print(format_table(before))
-    fixes = select_fixes(before, results, graph)
+    fixes, extras, source = advise_fixes(before, results, graph, offline=a.offline)
     if not fixes:
         sys.exit("No High/Medium priority findings with a catalog fix. Nothing to heal.")
     for f in fixes:
-        LIVE.event("ai", f"FIX {f['id']} (for {', '.join(f['rows'])}): {f['why']}")
+        LIVE.event("ai", f"FIX [{source}] {f['id']} (for {', '.join(f['rows'])}): {f['why']}")
+    for e in extras:
+        LIVE.event("ai", f"ALSO RECOMMENDED (manual, not auto-applied): {e.get('problem')} -> {e.get('recommendation')}")
     LIVE.set(phase="healing")
     if not apply_fixes(fixes, cfg):
         sys.exit("docker compose could not apply the fixes")
@@ -122,7 +134,7 @@ def cmd_demo(a, cfg):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["up", "map", "baseline", "plan", "run", "report", "heal", "dashboard", "panic", "demo"])
+    p.add_argument("command", choices=["up", "map", "baseline", "plan", "run", "agent", "report", "heal", "dashboard", "panic", "demo"])
     p.add_argument("--offline", action="store_true", help="use cached AI answers (no internet needed)")
     p.add_argument("--only", help="comma list of experiment ids, e.g. E1,E3")
     p.add_argument("--compare", help="earlier run folder for before/after comparison")

@@ -8,7 +8,7 @@ For each experiment:
 import os
 import time
 
-from .common import BASELINE_FILE, LATEST_FILE, LIVE, RUNS_DIR, STOP_FILE, load_json, save_json
+from .common import BASELINE_FILE, LATEST_FILE, LIVE, PLAN_FILE, RUNS_DIR, STOP_FILE, load_json, save_json
 from .faults import Fault, SafetyError, panic
 from .fmea import build_fmea
 from .probes import Prober, settled_count, summarize
@@ -110,6 +110,10 @@ class Engine:
             LIVE.event("guard", f"REFUSED by safety check: {e}")
             return {"id": exp["id"], "name": exp["name"], "status": "refused", "error": str(e)}
 
+        down = self._stopped()
+        if down:
+            LIVE.event("warn", f"PRE-FLIGHT: {down} were not running, starting them so the experiment is clean")
+            self._start_services(down)
         sent0, c0 = self._quiesce()
         self.prober.hold.clear()
         self._sleep_publishing(d["warmup_s"])
@@ -165,6 +169,12 @@ class Engine:
         LIVE.event("ok" if recovery_s is not None else "warn",
                    f"Recovered in {recovery_s}s" if recovery_s is not None else "NOT recovered within timeout")
 
+        time.sleep(4)   # give crashed containers time to show as crashed
+        stuck = self._stopped()
+        if stuck:
+            LIVE.event("guard", f"CASCADE FAILURE: {stuck} crashed and did NOT come back on their own "
+                                f"(probes look healthy, but the pipeline is silently broken)")
+            self._start_services(stuck)   # manual rescue so the next experiment starts clean
         sent1, c1 = self._quiesce()
         self.prober.hold.clear()
         sent = sent1 - sent0
@@ -183,12 +193,36 @@ class Engine:
             st["time_to_first_error_s"] = round(first_fail - t_inject, 1) if first_fail else None
             window[p["name"]] = st
 
+        pred, check = exp.get("prediction"), None
+        if pred:   # did the agent's falsifiable prediction match reality?
+            hit = {n for n, st in window.items() if st["error_rate"] >= 0.5}
+            check = {"probes": hit == set(pred.get("probes_affected") or []),
+                     "recovers": (recovery_s is not None) == bool(pred.get("recovers", True)),
+                     "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
+            LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
+                       + f" {check}")
         return {"id": exp["id"], "name": exp["name"], "steps": exp["steps"], "reason": exp["reason"],
                 "hypothesis": exp.get("hypothesis"), "predicted_probes": exp["predicted_probes"],
                 "status": "aborted" if aborted else "completed", "abort_reason": aborted,
                 "fault_window_s": round(t_restore - t_inject, 1), "probes": window,
                 "recovery_s": recovery_s, "guard_log": guard_log[-10:],
-                "delivery": {"sent": sent, "delivered": delivered, "lost": lost}}
+                "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
+                "prediction": pred, "prediction_check": check,
+                "stuck_services": stuck}
+
+    def _stopped(self):
+        """Services whose container is NOT running right now (crashed, killed or exited)."""
+        down = []
+        for name, svc in self.cfg["services"].items():
+            ok, out = docker("inspect", "-f", "{{.State.Running}}", svc["container"])
+            if ok and out.strip() != "true":
+                down.append(name)
+        return down
+
+    def _start_services(self, names):
+        for n in names:
+            docker("start", self.cfg["services"][n]["container"])
+        time.sleep(4)
 
     def _healthy_since(self, t_restore):
         """If every probe's last 3 results (after t_restore) are OK, return when that streak began."""
@@ -206,6 +240,54 @@ class Engine:
             time.sleep(1)
         self.active = []
         LIVE.set(faulted=[])
+
+    # ------------------------------------------------------------------ agent loop
+    def run_agent(self, chooser, max_steps=6):
+        """Adaptive loop: chooser(results_so_far) returns the next experiment dict, or None to finish."""
+        run_dir = os.path.join(RUNS_DIR, "run_" + time.strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(run_dir, exist_ok=True)
+        LIVE.log_path = os.path.join(run_dir, "events.log")
+        with open(LATEST_FILE, "w") as f:
+            f.write(run_dir)
+        if os.path.exists(STOP_FILE):
+            os.remove(STOP_FILE)
+        LIVE.set(phase="running", queue=[], score=None, findings=None, run_dir=run_dir)
+        self.prober.start()
+        self._sleep_publishing(3)
+        results, executed, queue = [], [], []
+        try:
+            for _ in range(max_steps):
+                if os.path.exists(STOP_FILE):
+                    LIVE.event("guard", "STOP file present - agent halted")
+                    break
+                LIVE.event("ai", "AGENT is reasoning about what to break next ...")
+                exp = chooser(results)
+                if not exp:
+                    break
+                executed.append(exp)
+                queue.append({"id": exp["id"], "name": exp["name"], "reason": exp["reason"],
+                              "status": "running", "score": None})
+                LIVE.set(queue=queue)
+                res = self.run_experiment(exp)
+                results.append(res)
+                queue[-1]["status"] = res["status"]
+                LIVE.set(queue=queue, fmea=build_fmea(results, load_json(BASELINE_FILE, {})))
+                plan = {"source": "agent", "experiments": executed}
+                save_json(os.path.join(run_dir, "results.json"), results)
+                save_json(os.path.join(run_dir, "plan.json"), plan)
+                save_json(PLAN_FILE, plan)               # so `heal` can re-run these exact experiments
+                save_json(os.path.join(run_dir, "baseline.json"), load_json(BASELINE_FILE, {}))
+                self._sleep_publishing(self.cfg["experiment_defaults"]["cooldown_s"])
+        except KeyboardInterrupt:
+            LIVE.event("guard", "Ctrl+C - restoring everything before exit")
+        finally:
+            self._restore_all()
+            if os.path.exists(STOP_FILE):
+                panic(self.cfg)
+            self.prober.stop()
+        LIVE.set(phase="ran", experiment=None)
+        LIVE.event("ok", f"Agent run saved to {run_dir}")
+        return run_dir, results
 
     # ------------------------------------------------------------------ whole plan
     def run(self, plan, only=None):
