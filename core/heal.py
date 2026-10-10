@@ -45,9 +45,30 @@ def select_fixes(rows, results, graph):
 
 def apply_fixes(fixes, cfg):
     cmd = ["docker", "compose", "-f", BASE_COMPOSE]
-    for f in fixes:
-        cmd += ["-f", os.path.join(FIX_DIR, f["file"])]
-    return subprocess.run(cmd + ["up", "-d"]).returncode == 0
+
+    for fix in fixes:
+        filename = fix.get("file", "")
+        if not isinstance(filename, str) or not filename:
+            LIVE.event("warn", "[Remediator] rejected fix with missing filename")
+            return False
+
+        path = os.path.realpath(os.path.join(FIX_DIR, filename))
+        if os.path.commonpath([os.path.realpath(FIX_DIR), path]) != os.path.realpath(FIX_DIR):
+            LIVE.event("warn", "[Remediator] rejected path outside fix directory")
+            return False
+
+        if not os.path.isfile(path):
+            LIVE.event("warn", f"[Remediator] fix file not found: {filename}")
+            return False
+
+        cmd += ["-f", path]
+
+    try:
+        result = subprocess.run(cmd + ["up", "-d"], check=False, timeout=180)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        LIVE.event("warn", f"[Remediator] compose apply failed: {exc}")
+        return False
 
 
 FIX_SYSTEM = """You are a senior SRE reviewing chaos-experiment findings (an FMEA table). You are given a CATALOG of safe,
@@ -91,3 +112,165 @@ def advise_fixes(rows, results, graph, offline=False):
         return rule_based, [], "rules"
     extras = [e for e in data.get("extra_recommendations", []) if isinstance(e, dict)][:5]
     return chosen, extras, source
+
+# ---------------------------------------------------------------------------
+# AI-GENERATED REMEDIATION: strict whitelist, validated before Docker sees it.
+# Generated overrides are JSON, which is also valid YAML.
+# ---------------------------------------------------------------------------
+
+import hashlib
+
+GENERATED_DIR = os.path.join(FIX_DIR, "generated")
+
+ALLOWED_SERVICES = {"vote", "result", "worker", "redis", "db"}
+ALLOWED_KEYS = {
+    "restart",
+    "deploy",
+    "depends_on",
+}
+
+def validate_generated_override(override):
+    """Accept only a small, explicit Docker Compose override schema."""
+    if not isinstance(override, dict) or set(override) != {"services"}:
+        return False, "Expected exactly one top-level 'services' object"
+
+    services = override["services"]
+    if not isinstance(services, dict) or not services:
+        return False, "Services must be a non-empty object"
+
+    for service, config in services.items():
+        if service not in ALLOWED_SERVICES or not isinstance(config, dict):
+            return False, f"Invalid service or configuration: {service}"
+
+        if not config:
+            return False, f"Empty configuration for {service}"
+
+        for key, value in config.items():
+            if key not in ALLOWED_KEYS:
+                return False, f"Forbidden key: {key}"
+
+            if key == "restart":
+                if value not in {"no", "always", "on-failure", "unless-stopped"}:
+                    return False, "Invalid restart policy"
+
+            elif key == "healthcheck":
+                if not isinstance(value, dict) or not value:
+                    return False, "healthcheck must be a non-empty object"
+                if set(value) - {"test", "interval", "timeout", "retries", "start_period", "disable"}:
+                    return False, "Forbidden healthcheck field"
+                if "test" in value and (
+                    not isinstance(value["test"], list)
+                    or not value["test"]
+                    or not all(isinstance(x, str) for x in value["test"])
+                ):
+                    return False, "healthcheck.test must be a list of strings"
+
+            elif key == "deploy":
+                if service not in ALLOWED_SERVICES or not isinstance(value, dict):
+                    return False, "deploy must be an object"
+                if set(value) != {"resources"} or not isinstance(value["resources"], dict):
+                    return False, "Only deploy.resources is allowed"
+                resources = value["resources"]
+                if set(resources) - {"limits", "reservations"}:
+                    return False, "Only resource limits/reservations are allowed"
+                for section in resources.values():
+                    if not isinstance(section, dict) or set(section) - {"cpus", "memory"}:
+                        return False, "Only CPU and memory limits are allowed"
+                    if any(not isinstance(v, (str, int, float)) for v in section.values()):
+                        return False, "Resource values must be strings or numbers"
+
+            elif key == "depends_on":
+                if not isinstance(value, dict) or not value:
+                    return False, "depends_on must be an object"
+                for dependency, condition in value.items():
+                    if dependency not in ALLOWED_SERVICES or not isinstance(condition, dict):
+                        return False, "Invalid dependency"
+                    if set(condition) != {"condition"} or condition["condition"] not in {
+                        "service_started", "service_healthy", "service_completed_successfully"
+                    }:
+                        return False, "Invalid dependency condition"
+
+        # 'command' is allowed only for Redis and only for a fixed safe pattern.
+        # It is deliberately not included in ALLOWED_KEYS above; handle it
+        # separately only after an explicit Redis-specific check.
+
+    return True, "valid"
+
+
+def draft_ai_remediation(rows, results, graph, existing_fixes, offline=False):
+    """Draft one safe compose override and one human-readable, unapplied code patch."""
+    actionable = [r for r in rows if r.get("action_priority") != "Low"]
+    if not actionable:
+        return None, None
+
+    # Keep the feature bounded and avoid repeatedly applying the same generated fix.
+    if any(f.get("id") == "ai-generated-override" for f in existing_fixes):
+        return None, None
+
+    evidence = []
+    result_by_id = {r.get("id"): r for r in results}
+    for row in actionable[:5]:
+        result = result_by_id.get(row.get("id"), {})
+        evidence.append({
+            "id": row.get("id"),
+            "failure_mode": row.get("failure_mode"),
+            "effect": row.get("effect"),
+            "rpn": row.get("rpn"),
+            "steps": result.get("steps", []),
+            "lost": (result.get("delivery") or {}).get("lost", 0),
+            "stuck_services": result.get("stuck_services", []),
+        })
+
+    system = """
+You are a cautious site reliability engineer. Propose ONE minimal Docker Compose
+override that may reduce the observed failure risk.
+
+Return JSON only:
+{
+  "override": {"services": {"service_name": {"allowed_key": "value"}}} or null,
+  "why": "evidence-based explanation",
+  "code_patch": {"problem": "...", "diff": "...", "recommendation": "..."} or null
+}
+
+Allowed services: vote, result, worker, redis, db.
+Allowed keys: restart, deploy.resources, depends_on.condition.
+Never include command, healthcheck, ports, volumes, environment,
+build, image, privileged, network, shell scripts, or other keys.
+The code patch is a suggestion only. It will NEVER be executed or applied.
+Use evidence from the supplied findings. If no safe useful override exists,
+return override=null. Do not claim a fix is proven before verification.
+"""
+
+    user = json.dumps({"findings": evidence, "services": graph.get("services", {})})
+    data, source = ask_json(
+        "remediation_draft", system, user, offline=offline, max_tokens=1200
+    )
+    if not data:
+        return None, None
+
+    override = data.get("override")
+    if override is None:
+        return None, data.get("code_patch")
+
+    ok, reason = validate_generated_override(override)
+    if not ok:
+        LIVE.event("warn", f"[Remediator] rejected generated override: {reason}")
+        return None, data.get("code_patch")
+
+    row_ids = [r["id"] for r in actionable if r.get("id")]
+    if not row_ids:
+        return None, data.get("code_patch")
+
+    os.makedirs(GENERATED_DIR, exist_ok=True)
+    path = os.path.join(GENERATED_DIR, "ai-override.yml")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(override, handle, indent=2)
+
+    fix = {
+        "id": "ai-generated-override",
+        "file": "generated/ai-override.yml",
+        "why": str(data.get("why") or "AI-generated override based on FMEA evidence")[:300],
+        "rows": row_ids,
+    }
+    LIVE.event("ai", f"[Remediator] validated AI override using {source}")
+    return fix, data.get("code_patch")
