@@ -68,6 +68,12 @@ class KnowledgeStore:
             (experiment_id,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def clear_observation(self, experiment_id):
+        """Remove an earlier case before reusing an experiment ID in a new run."""
+        with self.connection:
+            self.connection.execute("DELETE FROM observations WHERE experiment_id = ?", (experiment_id,))
+
+
     def save_diagnosis(self, diagnosis):
         """Store the complete Section 8.2 artifact, without renaming fields."""
         with self.connection:
@@ -104,3 +110,14 @@ class KnowledgeStore:
     def similar_signatures(self, features, limit=3):
         from .signatures import find_similar
         return find_similar(features, self.signatures(), limit=limit)
+
+
+def load_observation(experiment_id):
+    """Optional evidence must not prevent diagnosis when storage is unavailable."""
+    if not DEFAULT_PATH.exists():
+        return None
+    try:
+        with KnowledgeStore() as store:
+            return store.get_observation(experiment_id)
+    except (OSError, sqlite3.Error, ValueError):
+        return None

@@ -1,105 +1,100 @@
-"""DIAGNOSTICIAN AGENT (evidence-based root-cause analysis). Owner: Dipen. See blueprint 6.3 and 11.
-
-Runs only after a suspicious result (crash cascade, lost votes, no recovery, kill switch, wrong prediction).
-Day 1: topology and measured evidence, read-only log/state tools, baseline
-comparison, validated citations and a deterministic fallback. Existing state
-fields are preserved; fix suggestions are empty until a later phase.
+﻿"""Phase 1 detection only. Root-cause analysis is deferred to Phase 2.
+Existing investigation fields are preserved. LLM detection has a deterministic fallback.
 """
-from core.agentkit import ReActAgent
 from core.common import LIVE
-from core.tools import make_tools
-from core.analysis_tools import evidence_context
+from core.knowledge import load_observation
+from core.llm import ask_json
+import json
+import uuid
 
-from ..runtime import cfg
 
-INVESTIGATION_SCHEMA = {"root_cause": "one or two sentences", "evidence": ["quote or number from a tool"],
-                        "affected_services": ["service"], "confidence": "high|medium|low",
-                        "suggested_fix": "empty string; fix recommendations are deferred"}
+def detect_fault(res, configuration=None, baseline=None, observation=None):
+    evidence, affected = [], set()
+    configuration, baseline = configuration or {}, baseline or {}
+    entries = {p['name']: p.get('entry') for p in configuration.get('probes', [])}
+    for service in res.get('stuck_services') or []:
+        affected.add(service)
+        detail = (res.get('stuck_details') or {}).get(service) or {}
+        evidence.append(f"{service} was stopped at inspection; exit_code={detail.get('exit_code', 'unknown')}")
+    for probe, measured in (res.get('probes') or {}).items():
+        rate = measured.get('error_rate')
+        if isinstance(rate, (int, float)) and rate > 0:
+            evidence.append(f"{probe}: error_rate={rate:.1%}")
+            if entries.get(probe):
+                affected.add(entries[probe])
+        before = ((baseline.get('probes') or {}).get(probe) or {}).get('p95_ms')
+        latency = measured.get('p95_ms')
+        if isinstance(before, (int, float)) and before > 0 and isinstance(latency, (int, float)) and latency > 2 * before:
+            evidence.append(f"{probe}: p95={latency}ms exceeds twice baseline={before}ms")
+            if entries.get(probe):
+                affected.add(entries[probe])
+    lost = (res.get('delivery') or {}).get('lost')
+    if isinstance(lost, (int, float)) and lost > 0:
+        evidence.append(f"{lost} accepted votes undelivered at measurement cutoff")
+    if 'recovery_s' in res and res['recovery_s'] is None:
+        evidence.append('Recovery not observed within measurement window')
+    if observation and observation.get('experiment') == res.get('id'):
+        for event in observation.get('events') or []:
+            if event.get('event') == 'die':
+                evidence.append(f"Observer: {event.get('service')} exited at t={event.get('t')}; exit_code={event.get('exit_code')}")
+                if event.get('service'):
+                    affected.add(event['service'])
+    if res.get('status') == 'aborted':
+        evidence.append(f"Experiment stopped: {res.get('abort_reason') or 'reason unavailable'}")
+    detected = bool(evidence)
+    if not detected:
+        evidence.append('No fault confirmed by available measurements; full health is not established')
+    return ({'root_cause': 'Phase 2', 'evidence': evidence,
+             'affected_services': sorted(affected), 'confidence': 'low',
+             'suggested_fix': ''}, detected)
 
 
 def investigate(cfg, graph, res, offline=False, baseline=None):
-    facts = evidence_context(res, graph, baseline)
-    agent = ReActAgent(
-        "Diagnostician",
-        "an SRE doing root-cause analysis right after a chaos experiment. Use read-only tools (logs, container "
-        "state, queue depth, database count, config) to explain WHY the system behaved the way it did. "
-        "Separate injection metadata from observed effects. Topology narrows suspects but does not prove "
-        "dependency health. Do not claim missing restart policies, permanent data loss, persistence "
-        "settings, or event timing without evidence. Current tool readings are post-experiment snapshots. "
-        "Quote exact evidence strings from context or tools. Use medium confidence only when topology "
-        "and mechanism evidence agree; otherwise low. High confidence requires confirmed intervention "
-        "and is unavailable on Day 1. Return suggested_fix as an empty string.",
-        make_tools(cfg, graph), INVESTIGATION_SCHEMA, max_steps=5, offline=offline)
-    final, trace = agent.run(f"Explain the root cause of what happened in experiment {res.get('id')}.", facts)
-    return {"final": final, "tool_calls": len(trace), "trace": trace}
+    """Ask the model to assess observed symptoms, never explain their cause."""
+    final, detected = detect_fault(res, cfg, baseline, load_observation(res.get('id')))
+    answer, source = ask_json(
+        'fault_detection_' + uuid.uuid4().hex,
+        'Assess fault evidence only. Never explain root causes or recommend fixes. '
+        'Return JSON with fault_detected (boolean), evidence (exact strings copied from supplied evidence), '
+        'and affected_services (a subset of supplied affected_services). '
+        'A lack of evidence does not establish full health.',
+        json.dumps({'measurements': {'probes': res.get('probes'), 'delivery': res.get('delivery'),
+                                   'stuck_services': res.get('stuck_services')},
+                    'evidence': final['evidence'], 'affected_services': final['affected_services']}),
+        offline=offline, max_tokens=1000)
+    valid = (isinstance(answer, dict) and type(answer.get('fault_detected')) is bool
+             and answer['fault_detected'] == detected
+             and isinstance(answer.get('evidence'), list) and bool(answer['evidence'])
+             and all(isinstance(e, str) and e in final['evidence'] for e in answer['evidence'])
+             and isinstance(answer.get('affected_services'), list)
+             and all(isinstance(s, str) and s in final['affected_services'] for s in answer['affected_services']))
+    if valid and source not in ('none', 'cache'):
+        final = dict(final, evidence=answer['evidence'], affected_services=answer['affected_services'])
+    else:
+        source = 'rules'
+    return {'final': final, 'tool_calls': 0, 'trace': [], 'source': source, 'fault_detected': detected}
 
 
 def rule_based(res, graph=None):
-    stuck, details = res.get("stuck_services") or [], res.get("stuck_details") or {}
-    lost = (res.get("delivery") or {}).get("lost") or 0
-    if stuck:
-        context = evidence_context(res, graph or {})
-        suspects = context["topology"]["candidates"]
-        dns = [s for s in suspects if any("name or service not known" in str(line).lower()
-               or "enotfound" in str(line).lower() for line in details.get(s, {}).get("last_logs", []))]
-        cause = (f"{', '.join(dns)} remained stopped; its logs contain a DNS resolution failure. "
-                 "DNS failure is a supported mechanism candidate; onset timing is unconfirmed." if dns else
-                 f"{', '.join(suspects)} remained stopped and is a topology-based cause candidate; "
-                 "the exit mechanism is not established.")
-        return {"root_cause": cause, "evidence": context["measured_evidence"],
-                "affected_services": stuck,
-                "confidence": "medium" if dns and graph else "low", "suggested_fix": ""}
-    if lost:
-        return {"root_cause": f"{lost} accepted votes were undelivered at the measurement cutoff; "
-                              "the cause and permanent loss are not established",
-                "evidence": [f"delivery audit: {res['delivery']}"], "affected_services": [],
-                "confidence": "low", "suggested_fix": ""}
-    return {"root_cause": res.get("abort_reason") or "behaviour differed from the prediction",
-            "evidence": evidence_context(res, graph or {})["measured_evidence"],
-            "affected_services": [], "confidence": "low", "suggested_fix": ""}
-
-
-def validated_final(final, context, trace, graph):
-    """Reject malformed or unsupported citations instead of trusting model JSON."""
-    if not isinstance(final, dict):
-        return None
-    if not isinstance(final.get("root_cause"), str) or not final["root_cause"].strip():
-        return None
-    citations = final.get("evidence")
-    services = final.get("affected_services")
-    if not isinstance(citations, list) or not citations or not all(isinstance(e, str) and e.strip() for e in citations):
-        return None
-    if not isinstance(services, list) or not all(isinstance(s, str) and s in graph.get("services", {}) for s in services):
-        return None
-    sources = context["measured_evidence"] + [str(t.get("observation", "")) for t in trace
-                                            if t.get("tool") and not str(t.get("observation", "")).startswith(("tool error", "bad arguments", "unknown tool"))]
-    if not all(any(citation in source for source in sources) for citation in citations):
-        return None
-    if final.get("confidence") not in ("low", "medium", "high"):
-        return None
-    # No intervention or signature evidence is collected in this Day-1 node.
-    return {"root_cause": final["root_cause"], "evidence": citations,
-            "affected_services": services, "confidence": "low", "suggested_fix": ""}
+    return detect_fault(res, observation=load_observation(res.get('id')))[0]
 
 
 def diagnostician_node(state):
-    LIVE.set(agent_active="diagnostician")
-    if not state.get("results"):
-        return {"investigations": dict(state.get("investigations") or {})}
-    res = state["results"][-1]
-    graph = state.get("graph") or {}
-    context = evidence_context(res, graph, state.get("baseline"))
+    LIVE.set(agent_active='diagnostician')
+    inv = dict(state.get('investigations') or {})
+    if not state.get('results'):
+        return {'investigations': inv}
+    from ..runtime import cfg
+    res = state['results'][-1]
+    final, detected = detect_fault(res, cfg(), state.get('baseline'), load_observation(res.get('id')))
     try:
-        out = investigate(cfg(), graph, res, offline=state.get("offline", False),
-                          baseline=state.get("baseline"))
-        final = validated_final(out.get("final"), context, out.get("trace") or [], graph)
-    except Exception as exc:
-        LIVE.event("warn", f"[Diagnostician] evidence reasoning unavailable ({type(exc).__name__}); using rules")
-        final = None
-    by = "agent" if final else "rules"
-    final = final or rule_based(res, graph)
-    final["by"] = by
-    LIVE.event("ai", f"[Diagnostician] {res['id']} root cause: {final.get('root_cause')}")
-    inv = dict(state.get("investigations") or {})
-    inv[res["id"]] = final
-    return {"investigations": inv}
+        output = investigate(cfg(), state.get('graph') or {}, res, state.get('offline', False), state.get('baseline'))
+        if output.get('final'):
+            final = output['final']
+        final['by'] = 'agent' if output.get('source') not in (None, 'rules', 'none', 'cache') else 'rules'
+    except Exception:
+        final['by'] = 'rules'
+    status = 'Fault detected' if detected else 'No fault confirmed'
+    LIVE.event('ai', f"[Diagnostician] {res['id']} {status}: {'; '.join(final['evidence'])}. Root-cause analysis: Phase 2")
+    inv[res['id']] = final
+    return {'investigations': inv}

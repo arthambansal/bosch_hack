@@ -47,7 +47,7 @@ def compare_to_baseline(result, baseline):
     return comparisons
 
 
-def evidence_context(result, graph, baseline=None):
+def evidence_context(result, graph, baseline=None, observation=None):
     """Keep injection metadata distinct from measured effects and log mechanism."""
     stuck = sorted(set(result.get("stuck_services") or []))
     evidence = []
@@ -68,6 +68,14 @@ def evidence_context(result, graph, baseline=None):
         evidence.append(f"measured recovery_s={result['recovery_s']}")
     if result.get("abort_reason"):
         evidence.append(f"guard: {result['abort_reason']}")
+    if observation and observation.get("experiment") == result.get("id"):
+        for event in sorted(observation.get("events") or [], key=lambda e: e.get("t", 0)):
+            evidence.append(f"observer event: {event.get('service')} {event.get('event')} "
+                            f"at t={event.get('t')}; exit_code={event.get('exit_code')}")
+        for service, templates in (observation.get("new_log_templates") or {}).items():
+            evidence.extend(f"observer {service} template: {line}" for line in templates)
+        evidence.append(f"observer delivery: {observation.get('delivery')}")
+        evidence.append(f"observer queue_depth: {observation.get('queue_depth')}")
     return {"measured_evidence": evidence, "topology": localize(graph, stuck),
             "baseline_comparison": compare_to_baseline(result, baseline or {}),
             "injected_steps": result.get("steps") or [],

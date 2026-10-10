@@ -12,6 +12,8 @@ from .common import BASELINE_FILE, LATEST_FILE, LIVE, PLAN_FILE, RUNS_DIR, STOP_
 from .faults import Fault, SafetyError, panic
 from .fmea import build_fmea
 from .probes import Prober, settled_count, summarize
+from .knowledge import KnowledgeStore
+from . import observer
 
 
 class Guard:
@@ -100,6 +102,12 @@ class Engine:
     def run_experiment(self, exp):
         cfg, d = self.cfg, self.cfg["experiment_defaults"]
         s = cfg["safety"]
+        # Observation IDs are reused across runs; never retrieve an older run's evidence.
+        try:
+            with KnowledgeStore() as store:
+                store.clear_observation(exp["id"])
+        except Exception as exc:
+            LIVE.event("warn", f"Observer memory unavailable ({type(exc).__name__})")
         LIVE.event("info", f"=== {exp['id']}: {exp['name']} ===")
         LIVE.event("ai", f"Why: {exp['reason']}")
         LIVE.set(experiment=exp, guard={"ticks": 0, "reasons": [], "tripped": False})
@@ -207,7 +215,7 @@ class Engine:
                      "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
             LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
                        + f" {check}")
-        return {"id": exp["id"], "name": exp["name"], "steps": exp["steps"], "reason": exp["reason"],
+        result = {"id": exp["id"], "name": exp["name"], "steps": exp["steps"], "reason": exp["reason"],
                 "hypothesis": exp.get("hypothesis"), "predicted_probes": exp["predicted_probes"],
                 "status": "aborted" if aborted else "completed", "abort_reason": aborted,
                 "fault_window_s": round(t_restore - t_inject, 1), "probes": window,
@@ -215,6 +223,35 @@ class Engine:
                 "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
                 "prediction": pred, "prediction_check": check,
                 "stuck_services": stuck, "stuck_details": stuck_details}
+        self._record_observation(exp, result, t_inject, time.time())
+        return result
+
+    def _record_observation(self, exp, result, t_start, t_end):
+        """Use the existing Section 8/9 Knowledge Store channel, not new state keys.
+
+        Events cover injection through recovery/rescue. Probe rates are explicitly
+        the fault-window rates from the engine. Canary measurements stay unknown.
+        """
+        try:
+            observed = observer.summary(t_start, t_end, cfg=dict(self.cfg, experiment=exp["id"]),
+                                        prober=self.prober)
+            summary = {"experiment": exp["id"],
+                       "mttd_s": min((p["time_to_first_error_s"] for p in result["probes"].values()
+                                      if p.get("time_to_first_error_s") is not None), default=None),
+                       "mttr_s": result["recovery_s"],
+                       "probe_error_rate": {n: p["error_rate"] for n, p in result["probes"].items()},
+                       "delivery": {"accepted": result["delivery"]["sent"],
+                                    "delivered": result["delivery"]["delivered"], "canary_lag_s": None},
+                       "queue_depth": observed.get("queue_depth") or {"start": None, "end": None},
+                       "events": observed.get("events") or [],
+                       "new_log_templates": observed.get("new_log_templates") or {},
+                       "kill_switch": result["abort_reason"], "stuck_services": result["stuck_services"]}
+            with KnowledgeStore() as store:
+                store.save_observation(summary)
+            LIVE.event("info", f"[Observer] {exp['id']} summary saved for diagnosis")
+        except Exception as exc:
+            # Measurement/storage errors must never change fault restoration or result contracts.
+            LIVE.event("warn", f"[Observer] summary unavailable ({type(exc).__name__}); engine evidence retained")
 
     def _stopped(self):
         """Services whose container is NOT running right now (crashed, killed or exited)."""
