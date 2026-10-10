@@ -5,6 +5,7 @@ import time
 from core.common import LATEST_FILE, LIVE, RUNS_DIR, STOP_FILE, load_config
 from core.engine import Engine
 from core.faults import panic
+from agentic.gate import GATE_SYNC
 
 RT = {"cfg": None, "engine": None, "run_dir": None}
 
@@ -35,7 +36,7 @@ def start(graph):
     eng = Engine(cfg(), graph)
     eng.prober.start()
     RT.update(engine=eng, run_dir=d)
-    LIVE.set(phase="running", run_status="running", run_dir=d, agent_active=None, approval_request=None,
+    LIVE.set(phase="running", run_status="running", run_dir=d, agent_active=None, approval_request=None, gate_sync=GATE_SYNC,
              approval_result=None, cleanup=None, report_path=None)
     return d
 

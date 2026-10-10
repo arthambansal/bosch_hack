@@ -35,6 +35,19 @@ Rules: (1) you only edit files you own; (2) you talk to other modules only throu
      (Legacy: a file WITHOUT gate_id is accepted only if it is newer than the request. Deprecated.)
   4. After the answer, live_state: `approval_request = null` and `approval_result = {gate_id, answer: "approved"|"denied",
      source: "dashboard"|"terminal"|"timeout"|"stop", at}`. No answer before `expires_at` = denied. A STOP = denied at once.
+  4b. SHARED GATE LOCK (v5). Opening, deciding, consuming and closing a gate are guarded by ONE cross-process lock, the directory
+     `runs/gate.lock` (created with mkdir, atomic on Linux/macOS/Windows; a lock older than 10 s is treated as left by a crash and
+     broken). The orchestrator holds it to OPEN (wipe old decision + publish request), CONSUME (re-check + remove approval.json) and
+     CLOSE (clear request + publish result). The server MUST NOT write approval.json by hand any more; it calls
+
+         from agentic.gate import submit_decision
+         status, body = submit_decision(gate_id, approved, by="dashboard")   # approved must be a real bool
+
+     which takes the same lock, re-reads live_state, validates and writes. Returns
+     `200 {"ok": true, "gate_id"}` | `409 {"error": "no_pending"|"stale"|"expired"|"already_decided"}` |
+     `400 {"error": "approved_must_be_boolean"}` | `503 {"error": "gate_sync_unavailable"}` (lock busy for more than 5 s: retry).
+     live_state advertises the mechanism as `gate_sync = {"version": 1, "lock": "runs/gate.lock", "submit": "agentic.gate.submit_decision"}`;
+     if `gate_sync` is missing the orchestrator is older than v5 and the buttons should stay disabled.
   5. `POST /stop` creates the `STOP` file in the repo root. The orchestrator checks it before every graph node, before every
      fault injection, between verification experiments and while waiting for approval. Then it restores everything and writes
      a partial report.

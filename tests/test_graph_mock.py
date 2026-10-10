@@ -174,6 +174,51 @@ try:
     stop_cleared = LIVE.state.get("approval_request") is None and (LIVE.state.get("approval_result") or {}).get("source") == "stop"
     # --- STOP halts the whole autopilot run at the next node and still writes a report ---
     STOPTEST["on"] = True
+    # --- shared cross-process gate lock: server-side submit_decision() and the orchestrator never race ---
+    sync_out = {}
+    LIVE.set(approval_request=None)
+    sync_out["none"] = GT.submit_decision("abc", True)[0]                                    # nothing pending -> 409
+    LIVE.set(approval_request={"gate_id": "old", "expires_at": time.time() - 1})
+    sync_out["expired"] = GT.submit_decision("old", True)                                    # expired -> 409
+    LIVE.set(approval_request=None)
+
+    def run_gate_sync():
+        res, gate = {}, None
+        t = threading.Thread(target=lambda: res.setdefault("a", GT.ask_human({"id": "S", "name": "n", "question": "q?", "reason": "r"}, timeout_s=8)))
+        t.start()
+        for _ in range(100):
+            gate = LIVE.state.get("approval_request")
+            if gate:
+                break
+            nap(0.05)
+        codes = []
+        sync_out["stale"] = GT.submit_decision("wrong", True)[0]
+        ws = [threading.Thread(target=lambda: codes.append(GT.submit_decision(gate["gate_id"], True)[0])) for _ in range(8)]
+        [w.start() for w in ws]
+        [w.join() for w in ws]
+        t.join(10)
+        sync_out["codes"] = sorted(codes)
+        sync_out["answer"] = res.get("a")
+        sync_out["late"] = GT.submit_decision(gate["gate_id"], False)[0]                      # gate closed -> 409
+    run_gate_sync()
+    held_busy = False
+    with GT.gate_lock():
+        try:
+            with GT.gate_lock(timeout=0.2):
+                pass
+        except GT.GateLockTimeout:
+            held_busy = True
+    os.makedirs(GT.LOCK_DIR)
+    old = time.time() - 60
+    os.utime(GT.LOCK_DIR, (old, old))
+    with GT.gate_lock(timeout=1):                                                           # stale lock left by a crash is broken
+        stale_broken = True
+    lock_released = not os.path.exists(GT.LOCK_DIR)
+    sync_published = (LIVE.state.get("gate_sync") or {}).get("version") == 1
+    sync_ok = (sync_out["none"] == 409 and sync_out["expired"][0] == 409 and sync_out["expired"][1].get("error") == "expired"
+               and sync_out["stale"] == 409 and sync_out["codes"] == [200] + [409] * 7
+               and sync_out["answer"] == "yes" and sync_out["late"] == 409)
+
     stopped = G.run(goal="", require_approval=False)
     STOPTEST["on"] = False
     if os.path.exists(STOP_FILE):
@@ -195,6 +240,9 @@ try:
         "gate: unique token + expiry published": expiry_fields,
         "gate: duplicate decision for a finished gate ignored, expiry denies":
             ans_c == "no" and result_c.get("source") == "timeout" and gate_c["gate_id"] not in (gate_a["gate_id"], gate_b["gate_id"]),
+        "gate sync: stale/expired/no_pending give 409; 8 simultaneous submits -> exactly one 200; late submit 409": sync_ok,
+        "gate sync: lock excludes a second holder, breaks a stale lock, always released": held_busy and stale_broken and lock_released,
+        "gate sync: live_state advertises gate_sync v1": sync_published,
         "STOP halts the whole run after the current experiment": len(stopped["results"]) == 1,
         "partial report written after STOP": os.path.exists((stopped.get("report") or {}).get("path_md", "")),
         "ran 3+ experiments": len(final["results"]) >= 3,

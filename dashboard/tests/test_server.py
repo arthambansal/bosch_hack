@@ -69,16 +69,20 @@ class ControlServerTests(unittest.TestCase):
         self.assertEqual(self.request("/approve", {"gate_id": "current-gate", "approved": False}), (409, {"error": "expired"}))
         self.assertFalse(Path(server.APPROVAL).exists())
 
-    def test_valid_approval_and_denial_fail_closed_without_shared_sync(self):
+    def test_valid_approval_and_denial_are_recorded_with_the_gate_token(self):
         for approved in (True, False):
             with self.subTest(approved=approved):
-                self.assertEqual(self.request("/approve", {"gate_id": "current-gate", "approved": approved}), (503, {"error": "gate_sync_unavailable"}))
-                self.assertFalse(Path(server.APPROVAL).exists())
+                Path(server.APPROVAL).unlink(missing_ok=True)
+                status, body = self.request("/approve", {"gate_id": "current-gate", "approved": approved})
+                self.assertEqual((status, body), (200, {"ok": True, "gate_id": "current-gate"}))
+                saved = json.loads(Path(server.APPROVAL).read_text(encoding="utf-8"))
+                self.assertEqual((saved["gate_id"], saved["approved"], saved["by"]), ("current-gate", approved, "dashboard"))
+                self.assertFalse((Path(server.APPROVAL).parent / "gate.lock").exists())
 
-    def test_repeated_valid_submissions_never_write(self):
-        for approved in (True, True, False):
-            self.assertEqual(self.request("/approve", {"gate_id": "current-gate", "approved": approved})[0], 503)
-        self.assertFalse(Path(server.APPROVAL).exists())
+    def test_only_the_first_submission_is_accepted(self):
+        codes = [self.request("/approve", {"gate_id": "current-gate", "approved": a})[0] for a in (True, True, False)]
+        self.assertEqual(codes, [200, 409, 409])
+        self.assertTrue(json.loads(Path(server.APPROVAL).read_text(encoding="utf-8"))["approved"])
 
     def test_existing_decision_is_never_overwritten(self):
         original = json.dumps({"gate_id": "current-gate", "approved": False, "by": "discord", "submitted_at": time.time()})
@@ -114,10 +118,6 @@ class ControlServerTests(unittest.TestCase):
 
     def test_state_is_not_augmented_or_mutated(self):
         self.assertEqual(self.request("/state", method="GET"), (200, self.snapshot))
-
-    @unittest.skip("Approval acceptance requires an orchestrator-owned shared claim/closure helper; none exists in cab07d5")
-    def test_valid_decision_is_atomically_accepted(self):
-        pass
 
 
 if __name__ == "__main__":
