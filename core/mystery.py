@@ -307,7 +307,7 @@ def _read_request(valid_ids, st=None):
     The claim happens while holding the SAME lock directory the dashboard takes before it accepts a request, and the
     non-idle state is published (st.set) before that lock is released. So a second dashboard submission can never be
     accepted between "request claimed" and "state is no longer idle"."""
-    lock = REQUEST_FILE.replace("mystery_request.json", "dashboard_mystery.lock")
+    lock = os.path.join(os.path.dirname(REQUEST_FILE), "dashboard_mystery.lock")      # same folder + name the dashboard locks
     claimed = REQUEST_FILE + ".claimed"
     held = False
     deadline = time.monotonic() + 2
