@@ -25,7 +25,7 @@ RESET = "\033[0m"
 
 def load_json(path, default=None):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return default
@@ -34,7 +34,7 @@ def load_json(path, default=None):
 def save_json(path, data):
     """Write to a temp file then rename, so readers never see a half-written file."""
     tmp = path + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, path)
 
@@ -67,7 +67,7 @@ def percentile(values, pct):
 
 def latest_run_dir():
     try:
-        with open(LATEST_FILE) as f:
+        with open(LATEST_FILE, encoding="utf-8") as f:
             path = f.read().strip()
         return path if os.path.isdir(path) else None
     except OSError:
@@ -120,11 +120,17 @@ class Live:
 
     def event(self, kind, msg):
         line = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
-        print(COLORS.get(kind, "") + line + RESET, flush=True)
+        rendered = COLORS.get(kind, "") + line + RESET
+        try:
+            print(rendered, flush=True)
+        except UnicodeEncodeError:
+            import sys
+            encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+            print(rendered.encode(encoding, errors="backslashreplace").decode(encoding), flush=True)
         with self.lock:
             self.state["events"] = (self.state["events"] + [{"t": time.time(), "kind": kind, "msg": line}])[-60:]
         if self.log_path:
-            with open(self.log_path, "a") as f:
+            with open(self.log_path, "a", encoding="utf-8") as f:
                 f.write(f"{kind.upper():8} {line}\n")
         self.flush()
 
@@ -155,7 +161,7 @@ class Live:
             snapshot = json.dumps(self.state)
         try:
             tmp = LIVE_FILE + ".tmp"
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 f.write(snapshot)
             os.replace(tmp, LIVE_FILE)
         except OSError:

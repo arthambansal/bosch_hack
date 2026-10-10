@@ -103,6 +103,8 @@ def docker_events(t_start, t_end, project="chaos"):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             check=False,
         )
@@ -118,7 +120,7 @@ def docker_events(t_start, t_end, project="chaos"):
             continue
 
         action = event.get("Action", event.get("status", ""))
-        if action not in {"die", "start", "restart"}:
+        if action not in {"die", "start", "restart", "pause", "unpause"}:
             continue
 
         attrs = event.get("Actor", {}).get("Attributes", {})

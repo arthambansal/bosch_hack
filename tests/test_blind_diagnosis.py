@@ -1,6 +1,7 @@
 """SYNTHETIC ONLY. Blind interfaces tested without Docker, network or credentials."""
 import copy
 import json
+import io
 from pathlib import Path
 import sys
 import tempfile
@@ -203,6 +204,58 @@ class BlindTests(unittest.TestCase):
         agent.assert_called_once()
         self.assertEqual(guess['target'], 'redis')
         self.assertIn('candidates', agent.return_value.run.call_args.args[1])
+
+    def test_unicode_evidence_survives_windows_console_and_utf8_log(self):
+        from core.common import Live
+        evidence = 'Redis timeout \u2192 worker; latency 400\u202fms; \u0935\u093f\u092b\u0932'
+        answer = {'fault': 'latency', 'target': 'redis', 'confidence': 1,
+                  'top3': [{'fault': 'latency', 'target': 'redis', 'confidence': 1}],
+                  'root_cause': 'Measured dependency latency: ' + evidence, 'evidence': [evidence]}
+        result = self.result()
+        result['observation']['new_log_templates'] = {'worker': [evidence]}
+        logger = Live()
+        logger.log_path = str(Path(self.temp.name) / 'unicode.log')
+        console = io.TextIOWrapper(io.BytesIO(), encoding='cp1252', errors='strict')
+        def run(task, context):
+            self.assertIn(evidence, json.dumps(context, ensure_ascii=False))
+            logger.event('ai', evidence)
+            return answer, []
+        with patch.object(D, 'ReActAgent') as agent, patch.object(logger, 'flush'), patch('sys.stdout', console):
+            agent.return_value.run.side_effect = run
+            guess = D.diagnose_blind(result, self.configuration, self.graph)
+        self.assertEqual(guess['evidence'], [evidence])
+        self.assertEqual(D._BLIND_TIMINGS['M1']['source'], 'ai')
+        self.assertIn(evidence, Path(logger.log_path).read_text(encoding='utf-8'))
+
+    def test_fault_window_pause_overrides_restored_state_without_metadata(self):
+        result = self.result()
+        result['fault_window_evidence'] = {'t_start': 100, 't_end': 110, 'captured_at': 109,
+            'injection': 'FORBIDDEN', 'container_states': {
+                'db': {'status': 'paused', 'paused': True, 'running': True, 'exit_code': 0, 'injection': 'FORBIDDEN'}}}
+        self.states = {'db': {'status': 'running', 'paused': False}}
+        with patch.object(D, 'ReActAgent') as agent:
+            agent.return_value.run.return_value = ({}, [])
+            guess = D.diagnose_blind(result, self.configuration, self.graph)
+        context = agent.return_value.run.call_args.args[1]
+        self.assertNotIn('FORBIDDEN', json.dumps(context))
+        self.assertTrue(context['fault_window']['container_states']['db']['paused'])
+        self.assertFalse(context['container_state']['db']['paused'])
+        self.assertEqual(context['fault_window']['probes'], result['probes'])
+        self.assertEqual((guess['fault'], guess['target']), ('pause', 'db'))
+
+    def test_capture_and_pause_events_are_observations(self):
+        from core.tools import capture_container_states
+        from core.observer import docker_events
+        cfg = {'services': {'db': {'container': 'sandbox-db'}}}
+        state = {'Status': 'paused', 'Paused': True, 'Running': True, 'ExitCode': 0, 'Secret': 'omit'}
+        with patch('core.tools.docker', return_value=(True, json.dumps(state))):
+            captured = capture_container_states(cfg)
+        self.assertTrue(captured['db']['paused'])
+        self.assertNotIn('Secret', captured['db'])
+        event = {'Action': 'pause', 'time': 105, 'Actor': {'Attributes': {'com.docker.compose.service': 'db'}}}
+        with patch('core.observer.subprocess.run') as run:
+            run.return_value.stdout = json.dumps(event)
+            self.assertEqual(docker_events(100, 110)[0]['event'], 'pause')
 
 
 if __name__ == "__main__":

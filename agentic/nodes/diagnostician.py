@@ -322,6 +322,14 @@ def diagnose_blind(res, cfg, graph, offline=False):
         "events", "new_log_templates", "delivery", "mttd_s", "t_start", "t_end") if key in original}
     observation["experiment"] = safe["id"]
     safe["observation"] = observation
+    window = res.get("fault_window_evidence") or {}
+    # Explicit whitelist prevents injection metadata from entering the prompt.
+    window_states = {name: {key: state.get(key) for key in ("status", "running", "paused", "exit_code")}
+                     for name, state in (window.get("container_states") or {}).items()
+                     if name in cfg.get("services", {}) and isinstance(state, dict)}
+    fault_window = {key: window.get(key) for key in ("t_start", "t_end", "captured_at")}
+    fault_window.update(container_states=window_states, events=observation.get("events") or [],
+                        probes=safe.get("probes") or {})
     measured = dict(observation)
     rates = dict(observation.get("probe_error_rate") or {})
     rates.update({name: values["error_rate"] for name, values in (safe.get("probes") or {}).items()
@@ -335,7 +343,7 @@ def diagnose_blind(res, cfg, graph, offline=False):
             states = {}
     except (KeyError, ValueError, TypeError):
         states = {}
-    candidates = blind_candidates(safe, observation, states, cfg, graph)
+    candidates = blind_candidates(safe, observation, window_states or states, cfg, graph)
     if not candidates:
         LIVE.set(memory={"last_hit": None, "signatures": 0})
         return None  # no configured service: cannot manufacture a valid target
@@ -400,10 +408,14 @@ def diagnose_blind(res, cfg, graph, offline=False):
         context = reasoning_context(safe, graph, observation)
         context.pop("injected_action", None)
         context["container_state"] = states
+        context["fault_window"] = fault_window
         context["candidates"] = candidates
         context["configured_services"] = sorted(cfg.get("services", {}))
         agent = ReActAgent("BlindDiagnostician", "an SRE diagnosing an unknown fault from measurements only. "
             "You do not know the injection. Rank fault/target pairs, cite actual evidence, and state uncertainty. "
+            "Prioritize fault_window measured states and events over current container_state and live logs. "
+            "Paused=true supports pause; an exited state supports a crash. Probe latency locates a dependency path, "
+            "not necessarily the slow component. Healthy logs do not rule out dependency latency. "
             "Post-restoration state does not prove fault-window health. Never read files or injection metadata.",
             tools, schema, max_steps=5, offline=False, starters=[("list_containers", {})])
         try:

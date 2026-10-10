@@ -188,6 +188,15 @@ class Engine:
                 break
             time.sleep(s["probe_interval_s"])
 
+        # Read measured state while the fault is still present; never expose fault metadata.
+        from .tools import capture_container_states
+        captured_at = time.time()
+        try:
+            fault_states = capture_container_states(cfg)
+        except Exception:
+            fault_states = {}
+        if not fault_states:
+            LIVE.event("warn", "Fault-window container state unavailable; retaining probe and event evidence")
         t_restore = time.time()
         self._restore_all()
 
@@ -276,6 +285,8 @@ class Engine:
                 "prediction": pred, "prediction_check": check,
                 "stuck_services": stuck, "stuck_details": stuck_details,"observation": observation}
         self._save_observation(observation)
+        result["fault_window_evidence"] = {"t_start": t_inject, "t_end": t_restore,
+            "captured_at": captured_at, "container_states": fault_states}
         self._after_result(result, t_inject, t_restore, hidden)
         return result
 

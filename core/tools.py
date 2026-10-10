@@ -10,6 +10,26 @@ from .common import docker
 from .probes import backlog, delivery_count
 
 
+def capture_container_states(cfg):
+    """Read all configured containers in one bounded call, before restoration."""
+    names = list(cfg.get("services") or {})
+    if not names:
+        return {}
+    ok, output = docker("inspect", "--format", "{{json .State}}",
+                       *[cfg["services"][name]["container"] for name in names], timeout=2)
+    if not ok:
+        return {}
+    try:
+        rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+        if len(rows) != len(names):
+            return {}
+        return {name: {"status": row.get("Status"), "running": row.get("Running"),
+                       "paused": row.get("Paused"), "exit_code": row.get("ExitCode")}
+                for name, row in zip(names, rows)}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
 def make_tools(cfg, graph):
     services = cfg["services"]
 
