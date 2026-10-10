@@ -1,0 +1,11 @@
+# FIX for the "queued votes are lost when Redis crashes" weakness.
+# Turns on Redis append-only-file persistence, fsync on every write.
+#
+# Apply (re-creates only the redis container):
+#   docker compose -f sandbox/docker-compose.yml -f sandbox/fixes/redis-durable.yml up -d
+# Then re-run the experiments and compare:
+#   python chaospilot.py run
+#   python chaospilot.py report --compare runs/<previous_run_folder>
+services:
+  redis:
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]

@@ -1,0 +1,253 @@
+"""Experiment runner + safety guard (kill switch).
+
+For each experiment:
+  settle -> warm-up -> INJECT (steps can be delayed = combined failure) -> observe while the
+  Guard watches every 0.5 s -> RESTORE (automatic on threshold breach) -> measure recovery
+  -> count delivered votes to detect silent data loss.
+"""
+import os
+import time
+
+from .common import BASELINE_FILE, LATEST_FILE, LIVE, RUNS_DIR, STOP_FILE, load_json, save_json
+from .faults import Fault, SafetyError, panic
+from .fmea import build_fmea
+from .probes import Prober, settled_count, summarize
+
+
+class Guard:
+    """Trips when thresholds are breached for `breach_ticks` consecutive checks.
+
+    Three rules:
+      error rate  - a probe's recent error rate >= max_error_rate
+      latency     - a probe's recent p95 > max_p95_ms
+      blast radius- a probe that the dependency map said should be SAFE starts failing
+                    (the failure spread further than predicted -> stop immediately)
+    """
+
+    def __init__(self, cfg, prober, predicted):
+        self.s, self.prober, self.predicted = cfg["safety"], prober, set(predicted)
+        self.names = [p["name"] for p in cfg["probes"]]
+        self.ticks = 0
+
+    def check(self, since):
+        reasons, snap = [], {}
+        for name in self.names:
+            res = self.prober.since(name, since)[-self.s["window"]:]
+            if len(res) < 2:
+                continue
+            st = summarize(res)
+            snap[name] = st
+            if st["error_rate"] >= self.s["max_error_rate"]:
+                if name in self.predicted:
+                    reasons.append(f"{name} error rate {st['error_rate']:.0%} >= {self.s['max_error_rate']:.0%}")
+                else:
+                    reasons.append(f"BLAST RADIUS: {name} is failing but was predicted to be unaffected")
+            elif st["p95_ms"] > self.s["max_p95_ms"]:
+                reasons.append(f"{name} p95 {st['p95_ms']:.0f}ms > {self.s['max_p95_ms']}ms")
+        self.ticks = self.ticks + 1 if reasons else 0
+        return self.ticks >= self.s["breach_ticks"], reasons, snap
+
+
+class Engine:
+    def __init__(self, cfg, graph):
+        self.cfg, self.graph = cfg, graph
+        self.prober = Prober(cfg)
+        self.active = []          # faults currently applied (so Ctrl+C can always undo them)
+        LIVE.set(graph=graph, thresholds=cfg["safety"])
+
+    def publish(self, **extra):
+        LIVE.set(probes=self.prober.snapshot(), **extra)
+
+    def _sleep_publishing(self, seconds):
+        end = time.time() + seconds
+        while time.time() < end:
+            self.publish()
+            time.sleep(0.5)
+
+    def _quiesce(self):
+        """Pause traffic, let in-flight requests finish, return (votes_accepted, votes_delivered)."""
+        self.prober.hold.set()
+        time.sleep(self.cfg["safety"]["probe_timeout_s"] + 0.3)
+        sent = self.prober.votes_ok
+        delivered = settled_count(self.cfg)
+        return sent, delivered
+
+    # ------------------------------------------------------------------ baseline
+    def baseline(self, seconds=30):
+        LIVE.set(phase="baseline")
+        LIVE.event("info", f"Capturing baseline: {seconds}s of steady traffic ...")
+        self.prober.start()
+        sent0, c0 = self._quiesce()
+        self.prober.hold.clear()
+        t0 = time.time()
+        self._sleep_publishing(seconds)
+        sent1, c1 = self._quiesce()
+        self.prober.hold.clear()
+        probes = {p["name"]: summarize(self.prober.since(p["name"], t0)) for p in self.cfg["probes"]}
+        sent = sent1 - sent0
+        delivered = (c1 - c0) if None not in (c0, c1) else None
+        base = {"captured_at": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": seconds, "probes": probes,
+                "delivery": {"sent": sent, "delivered": delivered}}
+        save_json(BASELINE_FILE, base)
+        for name, st in probes.items():
+            LIVE.event("ok", f"  {name:12} requests={st['n']} errors={st['error_rate']:.0%} "
+                             f"p50={st['p50_ms']}ms p95={st['p95_ms']}ms")
+        LIVE.event("ok", f"  delivery: {sent} votes accepted, {delivered} reached the database")
+        LIVE.set(phase="idle", baseline=base)
+        return base
+
+    # ------------------------------------------------------------------ one experiment
+    def run_experiment(self, exp):
+        cfg, d = self.cfg, self.cfg["experiment_defaults"]
+        s = cfg["safety"]
+        LIVE.event("info", f"=== {exp['id']}: {exp['name']} ===")
+        LIVE.event("ai", f"Why: {exp['reason']}")
+        LIVE.set(experiment=exp, guard={"ticks": 0, "reasons": [], "tripped": False})
+
+        try:
+            faults = [Fault(st["type"], st["target"], cfg, self.prober, st.get("params")) for st in exp["steps"]]
+        except SafetyError as e:
+            LIVE.event("guard", f"REFUSED by safety check: {e}")
+            return {"id": exp["id"], "name": exp["name"], "status": "refused", "error": str(e)}
+
+        sent0, c0 = self._quiesce()
+        self.prober.hold.clear()
+        self._sleep_publishing(d["warmup_s"])
+
+        guard = Guard(cfg, self.prober, exp["predicted_probes"])
+        pending = sorted(zip(exp["steps"], faults), key=lambda x: x[0].get("delay_s", 0))
+        t_inject, aborted, guard_log = time.time(), None, []
+        while True:
+            elapsed = time.time() - t_inject
+            while pending and pending[0][0].get("delay_s", 0) <= elapsed:
+                _, f = pending.pop(0)
+                ok, out = f.apply()
+                if not ok:
+                    aborted = f"injection failed: {out}"
+                    break
+                self.active.append(f)
+                LIVE.set(faulted=[{"target": x.target, "type": x.type} for x in self.active])
+            if aborted:
+                break
+            tripped, reasons, snap = guard.check(since=t_inject)
+            if reasons:
+                guard_log.append({"t": round(elapsed, 1), "reasons": reasons})
+                LIVE.event("guard", f"guard {guard.ticks}/{s['breach_ticks']}: {'; '.join(reasons)}")
+            self.publish(guard={"ticks": guard.ticks, "reasons": reasons, "tripped": tripped, "snap": snap,
+                                "elapsed": round(elapsed, 1)})
+            if tripped:
+                aborted = "KILL SWITCH: " + "; ".join(reasons)
+                LIVE.event("guard", "!" * 20 + f" {aborted} " + "!" * 20)
+                break
+            if os.path.exists(STOP_FILE):
+                aborted = "manual kill switch (STOP file)"
+                LIVE.event("guard", aborted)
+                break
+            if elapsed >= s["max_experiment_s"]:
+                aborted = "hard time limit reached"
+                break
+            if elapsed >= d["duration_s"] and not pending:
+                break
+            time.sleep(s["probe_interval_s"])
+
+        t_restore = time.time()
+        self._restore_all()
+
+        # Recovery: every probe must return 3 healthy results in a row after the restore.
+        recovery_s = None
+        while time.time() - t_restore < d["recovery_timeout_s"]:
+            healthy_since = self._healthy_since(t_restore)
+            if healthy_since is not None:
+                recovery_s = round(healthy_since - t_restore, 1)
+                break
+            self.publish()
+            time.sleep(0.5)
+        LIVE.event("ok" if recovery_s is not None else "warn",
+                   f"Recovered in {recovery_s}s" if recovery_s is not None else "NOT recovered within timeout")
+
+        sent1, c1 = self._quiesce()
+        self.prober.hold.clear()
+        sent = sent1 - sent0
+        delivered = (c1 - c0) if None not in (c0, c1) else None
+        lost = max(0, sent - delivered) if delivered is not None else None
+        if lost:
+            LIVE.event("guard", f"DATA LOSS: {sent} votes accepted, only {delivered} reached the database ({lost} lost)")
+        elif lost == 0:
+            LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered")
+
+        window = {}
+        for p in cfg["probes"]:
+            res = self.prober.since(p["name"], t_inject, t_restore)
+            st = summarize(res)
+            first_fail = next((r[0] for r in res if not r[1]), None)
+            st["time_to_first_error_s"] = round(first_fail - t_inject, 1) if first_fail else None
+            window[p["name"]] = st
+
+        return {"id": exp["id"], "name": exp["name"], "steps": exp["steps"], "reason": exp["reason"],
+                "hypothesis": exp.get("hypothesis"), "predicted_probes": exp["predicted_probes"],
+                "status": "aborted" if aborted else "completed", "abort_reason": aborted,
+                "fault_window_s": round(t_restore - t_inject, 1), "probes": window,
+                "recovery_s": recovery_s, "guard_log": guard_log[-10:],
+                "delivery": {"sent": sent, "delivered": delivered, "lost": lost}}
+
+    def _healthy_since(self, t_restore):
+        """If every probe's last 3 results (after t_restore) are OK, return when that streak began."""
+        starts = []
+        for p in self.cfg["probes"]:
+            res = self.prober.since(p["name"], t_restore)
+            if len(res) < 3 or not all(r[1] for r in res[-3:]):
+                return None
+            starts.append(res[-3][0])
+        return max(starts)
+
+    def _restore_all(self):
+        for f in reversed(self.active):      # undo in reverse order (LIFO)
+            f.undo()
+            time.sleep(1)
+        self.active = []
+        LIVE.set(faulted=[])
+
+    # ------------------------------------------------------------------ whole plan
+    def run(self, plan, only=None):
+        run_dir = os.path.join(RUNS_DIR, "run_" + time.strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(run_dir, exist_ok=True)
+        LIVE.log_path = os.path.join(run_dir, "events.log")
+        with open(LATEST_FILE, "w") as f:
+            f.write(run_dir)
+        if os.path.exists(STOP_FILE):
+            os.remove(STOP_FILE)
+
+        exps = [e for e in plan["experiments"] if not only or e["id"] in only]
+        queue = [{"id": e["id"], "name": e["name"], "reason": e["reason"], "status": "planned", "score": None}
+                 for e in exps]
+        LIVE.set(phase="running", queue=queue, score=None, findings=None, run_dir=run_dir)
+        self.prober.start()
+        self._sleep_publishing(3)
+
+        results = []
+        save_json(os.path.join(run_dir, "plan.json"), plan)
+        save_json(os.path.join(run_dir, "baseline.json"), load_json(BASELINE_FILE, {}))
+        try:
+            for i, exp in enumerate(exps):
+                if os.path.exists(STOP_FILE):
+                    LIVE.event("guard", "STOP file present - skipping remaining experiments")
+                    break
+                queue[i]["status"] = "running"
+                LIVE.set(queue=queue)
+                res = self.run_experiment(exp)
+                results.append(res)
+                queue[i]["status"] = res["status"]
+                LIVE.set(queue=queue)
+                save_json(os.path.join(run_dir, "results.json"), results)   # saved after every experiment
+                LIVE.set(fmea=build_fmea(results, load_json(BASELINE_FILE, {})))
+                self._sleep_publishing(self.cfg["experiment_defaults"]["cooldown_s"])
+        except KeyboardInterrupt:
+            LIVE.event("guard", "Ctrl+C - restoring everything before exit")
+        finally:
+            self._restore_all()
+            if os.path.exists(STOP_FILE):
+                panic(self.cfg)
+            self.prober.stop()
+        LIVE.set(phase="ran", experiment=None)
+        LIVE.event("ok", f"Run saved to {run_dir}")
+        return run_dir, results

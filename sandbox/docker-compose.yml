@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# TARGET APPLICATION (the thing we break on purpose)
+#
+# Docker "Example Voting App" - public, Apache-2.0 licensed:
+#   https://github.com/dockersamples/example-voting-app
+# We use the official pre-built images so nothing has to compile on the day.
+#
+# Data flow:
+#   browser -> vote (Python) -> redis (queue) -> worker (.NET) -> db (Postgres)
+#   browser -> result (Node.js) -> db
+#
+# Start:  docker compose -f sandbox/docker-compose.yml up -d
+# Stop:   docker compose -f sandbox/docker-compose.yml down
+# ---------------------------------------------------------------------------
+name: chaos                     # compose project name; ChaosPilot refuses to touch anything outside it
+
+services:
+  vote:
+    image: dockersamples/examplevotingapp_vote
+    container_name: chaos-vote
+    ports: ["8080:80"]          # http://localhost:8080
+    depends_on: [redis]
+    networks: [chaosnet]
+
+  result:
+    image: dockersamples/examplevotingapp_result
+    container_name: chaos-result
+    ports: ["8081:80"]          # http://localhost:8081
+    depends_on: [db]
+    networks: [chaosnet]
+
+  worker:
+    image: dockersamples/examplevotingapp_worker
+    container_name: chaos-worker
+    depends_on: [redis, db]
+    networks: [chaosnet]
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: chaos-redis
+    networks: [chaosnet]
+
+  db:
+    image: postgres:15-alpine
+    container_name: chaos-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    networks: [chaosnet]
+
+networks:
+  chaosnet:
+    name: chaosnet              # fixed name so the network-partition fault can find it

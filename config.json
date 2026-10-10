@@ -1,0 +1,52 @@
+{
+  "app_name": "Docker Example Voting App",
+  "app_repo": "https://github.com/dockersamples/example-voting-app",
+  "project": "chaos",
+  "network": "chaosnet",
+
+  "services": {
+    "vote":   {"container": "chaos-vote",   "role": "entrypoint", "stateful": false},
+    "result": {"container": "chaos-result", "role": "entrypoint", "stateful": false},
+    "worker": {"container": "chaos-worker", "role": "consumer",   "stateful": false},
+    "redis":  {"container": "chaos-redis",  "role": "queue",      "stateful": true},
+    "db":     {"container": "chaos-db",     "role": "database",   "stateful": true}
+  },
+
+  "manual_edges": [["vote", "redis"], ["worker", "redis"], ["worker", "db"], ["result", "db"]],
+
+  "probes": [
+    {"name": "vote_write",  "entry": "vote",   "method": "POST", "url": "http://localhost:8080/",
+     "data": {"vote": "a"}, "counts_votes": true},
+    {"name": "result_page", "entry": "result", "method": "GET",  "url": "http://localhost:8081/"}
+  ],
+
+  "delivery_check": {
+    "container": "chaos-db",
+    "cmd": ["psql", "-U", "postgres", "-tAc", "SELECT count(*) FROM votes"]
+  },
+
+  "backlog_check": {
+    "container": "chaos-redis",
+    "cmd": ["redis-cli", "LLEN", "votes"]
+  },
+
+  "safety": {
+    "probe_interval_s": 0.5,
+    "probe_timeout_s": 2.5,
+    "window": 4,
+    "max_error_rate": 0.5,
+    "max_p95_ms": 2500,
+    "breach_ticks": 3,
+    "max_experiment_s": 45
+  },
+
+  "experiment_defaults": {"warmup_s": 5, "duration_s": 20, "recovery_timeout_s": 40, "cooldown_s": 5},
+
+  "fault_params": {
+    "latency": {"delay_ms": 400},
+    "spike":   {"threads": 30},
+    "netem_image": "nicolaka/netshoot"
+  },
+
+  "max_experiments": 6
+}
