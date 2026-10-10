@@ -347,7 +347,27 @@ def _read_request(valid_ids, st=None):
             pass
 
 
+def _consumer_file():
+    return os.path.join(os.path.dirname(REQUEST_FILE), "mystery_consumer.pid")
+
+
 def wait_loop(cfg, graph, offline=False):
+    """Run the judge-mode loop and publish our pid, so the dashboard's "Start Mystery Mode" button can tell it is already running."""
+    try:
+        with open(_consumer_file(), "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+    try:
+        _wait_loop(cfg, graph, offline)
+    finally:
+        try:
+            os.remove(_consumer_file())
+        except OSError:
+            pass
+
+
+def _wait_loop(cfg, graph, offline=False):
     """`python chaospilot.py mystery --wait`: keep the sandbox up and run a trial whenever a judge picks one."""
     from agentic.gate import _poll_terminal
     items = menu(cfg)

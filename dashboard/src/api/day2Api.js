@@ -36,6 +36,15 @@ export const day2Api = Object.freeze({
     if (response.status !== 202 || body?.accepted !== true) throw new ControlRequestError('Mystery acknowledgement is uncertain.', { uncertain: true });
     return { accepted: true }; // Accepted request, never an injected fault or completed trial.
   },
+  async startMystery(live, { signal } = {}) {
+    if (!live || live.source === 'fixture' || live.status !== 'connected') throw new ControlRequestError('Start needs a live connection to the dashboard server.');
+    const response = await responseFor('/mystery/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal });
+    let body;
+    try { body = await jsonBody(response); } catch { throw new ControlRequestError('Start acknowledgement is uncertain.', { uncertain: true }); }
+    if (body?.started === true) return { started: true, alreadyRunning: false };
+    if (body?.already_running === true) return { started: false, alreadyRunning: true };
+    throw new ControlRequestError('Start acknowledgement is uncertain.', { uncertain: true });
+  },
   async runs({signal} = {}) {
     const body = await jsonBody(await responseFor('/runs', {signal}));
     if (!Array.isArray(body) || body.some(row => !validRun(row?.name) || typeof row.started_at !== 'string' || typeof row.has_report !== 'boolean')) throw new ControlRequestError('Invalid run summaries.');

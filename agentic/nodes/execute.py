@@ -152,7 +152,7 @@ def verify_node(state):
         for f in rolled:                              # tell people only AFTER the rollback has really finished (or failed)
             w = statuses[f["id"]]["worse"]
             if not done:                              # the fix is STILL running: never publish it as rolled back
-                statuses[f["id"]] = {"status": "applied", "worse": w, "rollback_failed": True}
+                statuses[f["id"]] = {**statuses[f["id"]], "status": "applied", "worse": w, "rollback_failed": True}     # keep "untested"
             if done:
                 _notify("fix_rolled_back", f"Fix rolled back: {f['id']}",
                         f"{f['id']} made {w['id']} worse (RPN {w['rpn_before']} -> {w['rpn_after']}), so ChaosPilot undid it.",
@@ -163,7 +163,7 @@ def verify_node(state):
                         {"fix": f["id"], "experiment": w["id"]})
     elif rolled:                                      # STOP file present: nothing was undone, so do not claim it was
         for f in rolled:
-            statuses[f["id"]] = {"status": "applied", "worse": statuses[f["id"]]["worse"], "rollback_failed": True}
+            statuses[f["id"]] = {**statuses[f["id"]], "status": "applied", "rollback_failed": True}     # keep "worse" and "untested"
     for f in kept:
         if statuses[f["id"]]["status"] == "verified":
             rows = [c for c in cmp if c["id"] in f.get("rows", [])]
