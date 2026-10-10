@@ -18,7 +18,16 @@ Open http://localhost:5173. `/state`, `/approve`, and `/stop` are proxied to Pyt
 The Python root URL no longer renders the frontend: its handler cannot serve JSX or asset paths.
 Stop each terminal process with Ctrl+C.
 
-## Hackathon demo / local production build
+## Easiest demo (one URL)
+Build once, then start only the Python server and open http://127.0.0.1:8000 :
+```
+cd dashboard && npm ci && npm run build && cd ..
+python chaospilot.py dashboard
+```
+The Python server serves the built app from `dashboard/dist` (plain file names under `/assets/` only).
+Without a build it falls back to the old minimal page and prints a reminder.
+
+## Hackathon demo / local production build (Vite preview, optional)
 Keep the Python process above running, then from dashboard:
 ```powershell
 npm ci
@@ -26,7 +35,7 @@ npm run build
 npm run preview
 ```
 Open http://localhost:4173. Vite preview serves the compiled dist assets and proxies `/state`, `/approve`, and `/stop` to Python.
-This is a local demo arrangement, not a public production hosting service. Python alone does not serve the React build.
+This is a local demo arrangement, not a public production hosting service. Python alone now serves the React build too (see 'Easiest demo' above).
 Use two terminals and Ctrl+C to stop both processes. A real run must separately publish live_state.json.
 
 ## Controls, contracts, and security

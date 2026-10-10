@@ -16,6 +16,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlsplit, unquote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+DIST = os.path.join(HERE, "dist")                      # `npm run build` output; served on :8000 when it exists
+_ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
+_ASSET_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
+                ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json; charset=utf-8",
+                ".woff2": "font/woff2", ".map": "application/json; charset=utf-8"}
 ROOT = os.path.dirname(HERE)
 STATE = os.path.join(ROOT, "runs", "live_state.json")
 APPROVAL = os.path.join(ROOT, "runs", "approval.json")
@@ -319,11 +324,15 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, UnicodeError):
                 self.json_reply(500, {"error": "run_read_failed"})
             return
+        if path.startswith("/assets/") and os.path.isfile(os.path.join(DIST, "index.html")):
+            self.static_asset(path[len("/assets/"):])
+            return
         if path != "/":
             self.json_reply(404, {"error": "not_found"})
             return
+        built = os.path.join(DIST, "index.html")
         try:
-            with open(os.path.join(HERE, "index.html"), "rb") as stream:
+            with open(built if os.path.isfile(built) else os.path.join(HERE, "index.html"), "rb") as stream:
                 body = stream.read()
         except OSError:
             self.json_reply(404, {"error": "frontend_missing"})
@@ -335,10 +344,35 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def static_asset(self, name):
+        """Serve one built file from dashboard/dist/assets. Plain names only: no slashes, no dots-first, no traversal."""
+        ext = os.path.splitext(name)[1].lower()
+        if not _ASSET_NAME.match(name) or ".." in name or ext not in _ASSET_TYPES:
+            self.json_reply(404, {"error": "not_found"})
+            return
+        folder = os.path.realpath(os.path.join(DIST, "assets"))
+        target = os.path.realpath(os.path.join(folder, name))
+        if os.path.dirname(target) != folder:
+            self.json_reply(404, {"error": "not_found"})
+            return
+        try:
+            with open(target, "rb") as stream:
+                body = stream.read()
+        except OSError:
+            self.json_reply(404, {"error": "not_found"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", _ASSET_TYPES[ext])
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, *args):
         pass
 
 
 if __name__ == "__main__":
-    print("Dashboard backend: http://127.0.0.1:8000 (React uses Vite; Ctrl+C to stop)")
+    print("Dashboard: http://127.0.0.1:8000" + (" (built React app)" if os.path.isfile(os.path.join(DIST, "index.html")) else " - run `cd dashboard && npm ci && npm run build` first for the full UI") + "  (Ctrl+C to stop)")
     HTTPServer(("127.0.0.1", 8000), Handler).serve_forever()
