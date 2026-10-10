@@ -1,0 +1,12 @@
+{
+  "scope": [
+    {
+      "type": "kill",
+      "target": "redis",
+      "delay_s": 0
+    }
+  ],
+  "human_answer": "Approve E1 validation",
+  "channel": "Codex user response",
+  "fixes": "none"
+}

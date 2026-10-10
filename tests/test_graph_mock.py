@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json  # noqa: E402
 import time  # noqa: E402
 
-from core.common import BASELINE_FILE, DEPS_FILE, RUNS_DIR, STOP_FILE, load_config, save_json  # noqa: E402
+from core.common import BASELINE_FILE, DEPS_FILE, LIVE, RUNS_DIR, STOP_FILE, load_config, save_json  # noqa: E402
 
 backups = {}
 for f in (DEPS_FILE, BASELINE_FILE):
@@ -126,12 +126,52 @@ try:
     st_final, st_trace = ReActAgent("T3", "r", tools3, {"root_cause": "x"}, max_steps=5,
                                     starters=[("probe", {"a": 1}), ("probe2", {})]).run("g", {})
     AK.ask_json = real_ask
+    # --- human gate: unique token, expiry, stale/duplicate decisions ignored, nothing lost, request always cleared ---
+    import threading
+    import agentic.gate as GT
+
+    nap = lambda secs: threading.Event().wait(secs)     # real sleep (time.sleep is patched to a no-op above)  # noqa: E731
+
+    def submit(body):                                   # what the dashboard server does: atomic write
+        tmp = GT.APPROVAL_FILE + ".tmp"
+        json.dump(body, open(tmp, "w"))
+        os.replace(tmp, GT.APPROVAL_FILE)
+
+    def run_gate(action, timeout=8):
+        out = {}
+        th = threading.Thread(target=lambda: out.update(a=real_ask_human(
+            {"id": "E6", "name": "n", "question": "q", "reason": "r", "steps": []}, timeout_s=timeout)))
+        th.start()
+        gate = None
+        for _ in range(100):
+            gate = LIVE.state.get("approval_request")
+            if gate:
+                break
+            nap(0.02)
+        t0 = time.time()
+        action(gate)
+        th.join(15)
+        return out.get("a"), gate, time.time() - t0
+
+    submit({"approved": True})                           # an OLD decision lying around must not approve the next gate
+    os.utime(GT.APPROVAL_FILE, (1, 1))
+    ans_a, gate_a, _ = run_gate(lambda g: submit({"gate_id": g["gate_id"], "approved": False}))     # decision right after publish
+    result_a = LIVE.state.get("approval_result") or {}
+    cleared_a = LIVE.state.get("approval_request") is None and not os.path.exists(GT.APPROVAL_FILE)
+    ans_b, gate_b, took_b = run_gate(lambda g: (submit({"gate_id": "oldgate123", "approved": True}), nap(0.8),
+                                                submit({"gate_id": g["gate_id"], "approved": True})))   # wrong token ignored
+    submit({"gate_id": gate_b["gate_id"], "approved": True})                                          # duplicate of a finished gate
+    ans_c, gate_c, _ = run_gate(lambda g: None, timeout=1)                                            # nobody answers
+    result_c = LIVE.state.get("approval_result") or {}
+    expiry_fields = all(k in gate_a for k in ("gate_id", "created_at", "expires_at")) and gate_a["expires_at"] > gate_a["created_at"]
+
     # --- STOP ends an approval wait immediately ---
     open(STOP_FILE, "w").close()
     t0 = time.time()
     stop_wait_answer = real_ask_human({"question": "q", "reason": "r"}, timeout_s=30)
     stop_wait_s = time.time() - t0
     os.remove(STOP_FILE)
+    stop_cleared = LIVE.state.get("approval_request") is None and (LIVE.state.get("approval_result") or {}).get("source") == "stop"
     # --- STOP halts the whole autopilot run at the next node and still writes a report ---
     STOPTEST["on"] = True
     stopped = G.run(goal="", require_approval=False)
@@ -148,6 +188,13 @@ try:
         "approval {approved:true/false} and legacy {answer} formats":
             fmt == {"true": "yes", "false": "no", "legacy": "yes"},
         "STOP ends an approval wait at once": stop_wait_answer == "no" and stop_wait_s < 3,
+        "STOP clears the pending approval request": stop_cleared,
+        "gate: decision right after publish is not lost; old decision file does not leak in":
+            ans_a == "no" and cleared_a and result_a.get("gate_id") == gate_a["gate_id"] and result_a.get("source") == "dashboard",
+        "gate: wrong/stale token ignored, right token accepted": ans_b == "yes" and took_b >= 0.7 and gate_a["gate_id"] != gate_b["gate_id"],
+        "gate: unique token + expiry published": expiry_fields,
+        "gate: duplicate decision for a finished gate ignored, expiry denies":
+            ans_c == "no" and result_c.get("source") == "timeout" and gate_c["gate_id"] not in (gate_a["gate_id"], gate_b["gate_id"]),
         "STOP halts the whole run after the current experiment": len(stopped["results"]) == 1,
         "partial report written after STOP": os.path.exists((stopped.get("report") or {}).get("path_md", "")),
         "ran 3+ experiments": len(final["results"]) >= 3,

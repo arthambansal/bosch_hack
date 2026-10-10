@@ -8,6 +8,7 @@ told to use ONLY numbers present in the state; keep this deterministic version a
 import os
 
 from core.common import LIVE
+from core.report_extras import executive_summary, timing_markdown, fault_tree_markdown, write_html
 
 from ..runtime import run_dir
 
@@ -36,6 +37,8 @@ def reporter_node(state):
          f"**Resilience score: {score}/100 (grade {grade})**" + (f" -> after fixes: {after_score[0]}/100 ({after_score[1]})" if after_score else ""),
          "", f"Experiments run: {len(state.get('results', []))}. Stop reason: {state.get('done_reason', 'n/a')}.", ""]
     tm = state.get("threat_model") or {}
+    summary = executive_summary(state, score, grade)
+    L += ["## Executive summary", "", summary, ""]
     if tm:
         L += ["## Recon (before any attack)", f"Single points of failure: {', '.join(tm.get('single_points_of_failure') or []) or 'none found'}", ""]
         L += [f"- Hypothesis: {h}" for h in tm.get("hypotheses_to_test", [])] + [""]
@@ -55,10 +58,14 @@ def reporter_node(state):
         L += [f"| {c['id']} | {c['failure_mode']} | {c['rpn_before']} | {c['rpn_after']} | {c['reduction_pct']}% |" for c in ver["compare"]]
     if state.get("recommendations"):
         L += ["", "## Further recommendations (manual, not auto-applied)"] + [f"- {r.get('problem')}: {r.get('recommendation')}" for r in state["recommendations"]]
+    L += [""] + timing_markdown(state.get("results", []))
+    L += [""] + fault_tree_markdown(state.get("results", []))
+    L += ["", "## Heatmap", "", "The service × fault heatmap is in report.html. Combined experiments are labelled; untested cells remain unknown."]
     path = os.path.join(run_dir(), "report.md")
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
+    write_html(os.path.join(run_dir(), "report.html"), "\n".join(L), state.get("results", []), (state.get("graph") or {}).get("services", {}))
     LIVE.event("ok", f"[Reporter] report written: {path} (resilience {score}/100, grade {grade})")
     LIVE.set(score={"overall": score, "grade": grade, "after": after_score})
     return {"report": {"path_md": path, "resilience_score": score, "grade": grade,
-                       "after": after_score[0] if after_score else None}}
+                       "after": after_score[0] if after_score else None, "summary": summary}}

@@ -35,17 +35,20 @@ def start(graph):
     eng = Engine(cfg(), graph)
     eng.prober.start()
     RT.update(engine=eng, run_dir=d)
-    LIVE.set(phase="running", run_dir=d, agent_active=None)
+    LIVE.set(phase="running", run_status="running", run_dir=d, agent_active=None, approval_request=None,
+             approval_result=None, cleanup=None, report_path=None)
     return d
 
 
 def finish():
-    """Always called, even on Ctrl+C or a crash: undo any active fault and stop traffic."""
+    """Always called, even on Ctrl+C or a crash: undo any active fault and stop traffic, then publish the TRUE end state."""
+    stopped = os.path.exists(STOP_FILE)
     eng = RT.get("engine")
     if eng:
         eng._restore_all()
-    if os.path.exists(STOP_FILE):
+    if stopped:
         panic(cfg())
     if eng:
         eng.prober.stop()
-    LIVE.set(phase="ran", agent_active=None, experiment=None)
+    LIVE.set(phase="stopped" if stopped else "ran", run_status="stopped" if stopped else "completed", agent_active=None,
+             experiment=None, faulted=[], approval_request=None, cleanup={"done": True, "stopped": stopped, "at": time.time()})
