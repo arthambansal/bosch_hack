@@ -43,6 +43,28 @@ def select_fixes(rows, results, graph):
     return list(chosen.values())
 
 
+def fix_entries(fixes):
+    """Convert applied catalog fixes into contract-compatible entries."""
+    entries = []
+
+    for fix in fixes:
+        if not isinstance(fix, dict) or fix.get("status") != "applied":
+            continue
+
+        entries.append({
+            "id": fix.get("id", "unknown"),
+            "title": fix.get("title", fix.get("id", "Applied fix")),
+            "kind": fix.get("kind", "compose"),
+            "for": fix.get("for", fix.get("rows", [])),
+            "why": fix.get("why", ""),
+            "diff": fix.get("diff"),
+            "status": "applied",
+            "rpn": fix.get("rpn", []),
+        })
+
+    return entries
+
+
 def apply_fixes(fixes, cfg):
     cmd = ["docker", "compose", "-f", BASE_COMPOSE]
 
