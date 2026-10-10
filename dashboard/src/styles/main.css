@@ -294,6 +294,28 @@ h1 > span { color: #9a633e; }
 .emergency-area .stop-button { width: 100%; margin-top: 12px; }
 #stop-note { font-size: 10px; line-height: 1.8; color: #506754; margin-top: 10px; }
 
+/* Prepared control feedback and STOP review; mutations remain unavailable. */
+.control-feedback { display: flex; align-items: flex-start; gap: 8px; padding: 10px 11px; margin-top: 10px; border: 1px solid #c8d8ca; border-radius: 6px; font-size: 11px; background: #f4f8f1; color: #3f604a; }
+.control-feedback svg { margin-top: 2px; }
+.control-feedback p { line-height: 1.7; }
+.control-feedback.loading { color: #705028; background: #f8f2e8; border-color: #decda9; }
+.control-feedback.error { color: #813c31; background: #fbefea; border-color: #dfb9ab; }
+.stop-review { margin-top: 9px; }
+.stop-dialog { width: min(500px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 26px; border: 1px solid #d2dfd2; border-radius: 13px; background: #f8faf6; color: var(--ink); box-shadow: 0 16px 70px #102f2b35; }
+.stop-dialog::backdrop { background: #102f2b99; }
+.stop-dialog-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 15px; }
+.stop-dialog-heading > svg { color: #ad4239; }
+.stop-dialog-heading h2 { font-size: 20px; }
+.stop-dialog-heading .eyebrow { margin-bottom: 5px; font-size: 8px; }
+#stop-dialog-description { font-size: 12px; line-height: 1.8; color: var(--muted); }
+.stop-dialog-run { margin: 16px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+.stop-dialog-run small { display: block; margin-bottom: 5px; }
+.stop-dialog-run code { font-size: 11px; overflow-wrap: anywhere; }
+.stop-dialog-unavailable { font-size: 11px; line-height: 1.8; color: #6a5a3d; padding: 10px 12px; background: #f5eddf; border-radius: 6px; }
+.stop-dialog-actions { display: flex; justify-content: flex-end; gap: 9px; flex-wrap: wrap; margin-top: 22px; }
+.stop-dialog-actions > button:first-child { border: 1px solid #c9d7ca; padding: 9px 15px; background: white; border-radius: 6px; color: var(--ink); font-size: 11px; font-weight: 650; }
+.stop-dialog-actions .stop-button:disabled { color: #7a6861; border-color: #d4c7bf; background: #efe9e3; }
+
 @media (min-width: 1650px) {
   .sidebar { padding-left: 22px; padding-right: 22px; }
   .app-shell { grid-template-columns: 235px minmax(0,1fr); }
