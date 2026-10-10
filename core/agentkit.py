@@ -31,15 +31,16 @@ class Tool:
 
 
 PROTOCOL = """Reply with JSON only, in ONE of these two shapes:
-  {{"thought": "what you want to check and why", "tool": "<tool name>", "args": {{...}}}}
-  {{"thought": "why you are done", "final": {final_schema}}}
+  {{"thought": "<one sentence: what you check and why>", "tool": "<tool name>", "args": {{...}}}}
+  {{"thought": "<one sentence: your conclusion>", "final": {final_schema}}}
 Rules: use only the listed tools; at most {max_steps} tool calls; check facts with tools instead of guessing;
 your final answer must cite evidence taken from tool outputs or the given context."""
 
 
 class ReActAgent:
-    def __init__(self, name, role, tools, final_schema, max_steps=5, offline=False):
+    def __init__(self, name, role, tools, final_schema, max_steps=5, offline=False, min_calls=2):
         self.name, self.tools, self.max_steps, self.offline = name, tools, max_steps, offline
+        self.min_calls = min_calls     # evidence rule: no final answer before this many tool calls
         self.system = f"You are {name}, {role}.\n" + PROTOCOL.format(
             final_schema=json.dumps(final_schema), max_steps=max_steps)
 
@@ -59,6 +60,13 @@ class ReActAgent:
                 LIVE.event("warn", f"[{self.name}] no AI answer available, stopping")
                 return None, trace
             thought = str(data.get("thought", ""))[:300]
+            calls = sum(1 for t in trace if t["tool"] in self.tools)        # real tool calls only, not rejections
+            if "final" in data and not last and calls < self.min_calls:
+                LIVE.event("warn", f"[{self.name}] tried to conclude with {calls} tool call(s); evidence required, continuing")
+                trace.append({"step": step, "thought": thought, "tool": None, "args": {},
+                              "observation": f"REJECTED: you must call at least {self.min_calls} tools and cite their "
+                                             f"output before giving a final answer. Call a tool now."})
+                continue
             if "final" in data or last:
                 final = data.get("final") if isinstance(data.get("final"), dict) else None
                 LIVE.event("ai", f"[{self.name}] conclusion: {thought}")

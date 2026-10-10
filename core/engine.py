@@ -203,7 +203,8 @@ class Engine:
         if pred:   # did the agent's falsifiable prediction match reality?
             hit = {n for n, st in window.items() if st["error_rate"] >= 0.5}
             check = {"probes": hit == set(pred.get("probes_affected") or []),
-                     "recovers": (recovery_s is not None) == bool(pred.get("recovers", True)),
+                     # "recovers" means the whole system, so a crashed service that stayed down counts as NOT recovered
+                     "recovers": (recovery_s is not None and not stuck) == bool(pred.get("recovers", True)),
                      "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
             LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
                        + f" {check}")

@@ -34,7 +34,7 @@ def provider():
     return "none"
 
 
-def _call(system, user, max_tokens):
+def _call(system, user, max_tokens, json_mode=True):
     if provider() == "anthropic":
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -46,15 +46,19 @@ def _call(system, user, max_tokens):
         r.raise_for_status()
         return "".join(b.get("text", "") for b in r.json()["content"])
     base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    body = {"model": os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"), "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    if json_mode:
+        # JSON mode forces a valid JSON object. Without it, Llama models on Groq sometimes answer in their own
+        # tool-call syntax, which Groq rejects with HTTP 400 or which contains no JSON at all.
+        body["response_format"] = {"type": "json_object"}
     r = requests.post(
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}"},
-        json={"model": os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"), "temperature": 0.2,
-              "max_tokens": max_tokens,
-              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
-        timeout=90)
+        json=body, timeout=90)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    return r.json()["choices"][0]["message"]["content"] or ""
 
 
 def extract_json(text):
@@ -76,16 +80,33 @@ def ask_json(kind, system, user, offline=False, max_tokens=2500):
         return None, "none"
     try:
         LIVE.event("ai", f"AI ({provider()}) thinking about: {kind} ...")
-        for wait in (3, 8, 0):                       # free tiers rate-limit: back off and retry on HTTP 429
+        json_mode, text, data = True, None, None
+        for wait in (3, 8, 0, 0):                       # free tiers rate-limit: back off and retry on HTTP 429
             try:
-                text = _call(system, user, max_tokens)
+                text = _call(system, user, max_tokens, json_mode)
+                try:
+                    data = extract_json(text)
+                except ValueError:                   # no JSON in the reply: ask once more without JSON mode
+                    if json_mode:
+                        json_mode = False
+                        data = extract_json(_call(system, user, max_tokens, False))
+                    else:
+                        raise
                 break
             except requests.HTTPError as e:
-                if e.response is None or e.response.status_code != 429 or not wait:
+                code = e.response.status_code if e.response is not None else None
+                if code == 400 and json_mode:        # provider rejected JSON mode or the generation: retry plain
+                    LIVE.event("warn", f"AI 400: {e.response.text[:200]} -> retrying without JSON mode")
+                    json_mode = False
+                    continue
+                if code != 429 or not wait:
+                    if e.response is not None:
+                        LIVE.event("warn", f"AI error body: {e.response.text[:300]}")
                     raise
                 LIVE.event("warn", f"AI rate-limited, retrying in {wait}s")
                 time.sleep(wait)
-        data = extract_json(text)
+        if data is None:
+            raise RuntimeError("no usable AI reply after retries")
         save_json(cache, data)
         return data, provider()
     except Exception as e:   # network, auth, rate limit, bad JSON: all fall back gracefully
