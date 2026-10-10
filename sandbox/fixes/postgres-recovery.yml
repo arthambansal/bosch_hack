@@ -1,0 +1,6 @@
+# FIX: restart dependent services if a Postgres outage makes them exit.
+services:
+  worker:
+    restart: on-failure
+  result:
+    restart: on-failure
