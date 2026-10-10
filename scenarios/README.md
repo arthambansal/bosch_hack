@@ -19,7 +19,16 @@ Current commands: `python chaospilot.py replay --scenario scenarios/<id>.json` o
 `python chaospilot.py replay` for all. Data-store disruption and combined scenarios
 require the existing human gate. STOP is retained, never cleared by replay.
 
-CI is deliberately limited to one non-stateful kill/pause per scenario and uses a
-fresh base sandbox. No netem success is claimed. The workflow fails explicitly when
-there are no reviewed scenarios or an unsupported scenario; it cannot report an
-empty suite as a successful live chaos test. Human-gated cases run locally.
+CI selects only single worker/result kill or pause scenarios and uses a fresh base
+sandbox. Combined and data-store scenarios remain available for local, human-approved
+replay and are skipped by CI. The workflow fails explicitly when no reviewed CI-safe
+scenario exists; it cannot report an empty suite as successful. The workflow is
+manual (`workflow_dispatch`) because live runner behavior is not yet verified.
+The measured `result-pause-ci.json` scenario recovered in 0.6s with 32/32 votes
+delivered and no stuck items. No netem success is claimed.
+
+To produce the first eligible scenario from a real measurement, start/map/baseline
+the sandbox and run `python docs/measure_ci_scenario.py`. It runs one `pause result`
+experiment through the production Engine and writes `result-pause-ci.json` only when
+recovery is measured, recorded loss is zero, and no service remains stuck. Raw
+results and events stay in `runs/ci_measure_*` for review.

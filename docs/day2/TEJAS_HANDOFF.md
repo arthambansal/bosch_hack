@@ -53,10 +53,12 @@ metadata is absent it stays Not available, never guessed from unrelated rows.
   verification, FMEA and events; assignment numbers alone are not measurement files.
 - Supply the golden run, recording and public video URL.
 - Supply official submission URL, required member details and form instructions.
-- CI has not been observed running. Empty/no approved unattended scenarios fails
-  explicitly. Combined/data-store replays retain the human gate; do not weaken it
-  to obtain a green CI check. Agree a separately scoped CI policy if those cases
-  must be unattended.
+- CI is manual (`workflow_dispatch`) because live runner reliability is unverified. It
+  has a measured single-service result pause scenario (`result-pause-ci.json`)
+  with 0.6s recovery, 32/32 delivered votes, and no stuck items. It
+  selects only those safe scenarios, skips combined/data-store files, and fails
+  explicitly if none qualify or a selected replay fails. Combined/data-store
+  replays retain the local human gate. Do not weaken it to obtain a green check.
 - Governor policy_check reads process-global cfg; replay locally enforces the same
   documented one/two-fault, sandbox-target, one-data-store limits using its cfg,
   before constructing Engine. A future shared pure policy helper belongs to Artham.

@@ -1,0 +1,20 @@
+{
+  "id": "result-pause-ci",
+  "name": "Result service pause recovery",
+  "steps": [
+    {
+      "type": "pause",
+      "target": "result",
+      "delay_s": 0
+    }
+  ],
+  "invariants": [
+    "no_vote_loss",
+    "recovers_within_s:5"
+  ],
+  "from_run": "runs/ci_measure_20261011_003804",
+  "evidence": [
+    "Measured delivery: 32 accepted, 32 delivered, 0 lost",
+    "Measured recovery_s=0.6; result_page error_rate=0.333"
+  ]
+}
