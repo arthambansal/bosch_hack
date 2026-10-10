@@ -10,6 +10,7 @@ Safety by construction:
   * every thought and tool call is logged to the live event stream (visible on the dashboard)
 """
 import json
+import time
 
 from .common import LIVE
 from .llm import ask_json
@@ -27,7 +28,7 @@ class Tool:
         except Exception as e:  # tool errors are observations, never crashes
             return f"tool error: {e}"
         text = out if isinstance(out, str) else json.dumps(out, default=str)
-        return text[:1000]
+        return text[:700]          # small observations keep prompts under the provider's tokens-per-minute limit
 
 
 PROTOCOL = """Reply with JSON only, in ONE of these two shapes:
@@ -39,8 +40,13 @@ IMPORTANT: you cannot call functions directly. To use a tool, write its name in 
 
 
 class ReActAgent:
-    def __init__(self, name, role, tools, final_schema, max_steps=5, offline=False, min_calls=2, starters=None):
+    def __init__(self, name, role, tools, final_schema, max_steps=5, offline=False, min_calls=2, starters=None,
+                 prefetch=False, time_budget_s=None):
         self.name, self.tools, self.max_steps, self.offline = name, tools, max_steps, offline
+        # prefetch=True: run the starter tools by CODE before the first AI call (read-only, saves 2-3 AI round trips)
+        self.prefetch = prefetch
+        # time_budget_s: after this many seconds (rate limits!) the agent must answer with the evidence it has
+        self.time_budget_s = time_budget_s
         # starters: list of (tool, args) run by CODE (read-only, no AI call) if the model wastes 3 steps in a row
         self.starters = starters or [(t.name, {}) for t in tools.values() if not t.args]   # default: tools needing no arguments
         self.min_calls = min_calls     # evidence rule: no final answer before this many tool calls
@@ -64,14 +70,29 @@ class ReActAgent:
     def run(self, goal, context):
         """Returns (final_answer_dict_or_None, trace)."""
         trace, seen, waste = [], set(), 0
+        started = time.monotonic()
+        if self.prefetch:
+            for n, a in self.starters:
+                if n in self.tools and (n, json.dumps(a, sort_keys=True)) not in seen:
+                    seen.add((n, json.dumps(a, sort_keys=True)))
+                    LIVE.event("ai", f"[{self.name}] (code, read-only) gathers {n}({json.dumps(a)})")
+                    trace.append({"step": 0, "thought": "evidence gathered by code before reasoning", "tool": n,
+                                  "args": a, "observation": self.tools[n].run(a)})
         tool_list = "\n".join(f"- {t.name}({', '.join(t.args)}): {t.description}" for t in self.tools.values())
         LIVE.event("ai", f"[{self.name}] started: {goal}")
         for step in range(1, 2 * self.max_steps + 6):          # hard cap, even if the model misbehaves
             calls = sum(1 for t in trace if t["tool"] in self.tools)   # real tool calls only, not rejections
-            last = calls >= self.max_steps
-            user = (f"GOAL: {goal}\n\nCONTEXT:\n{json.dumps(context, default=str)[:3500]}"
+            over_time = bool(self.time_budget_s) and time.monotonic() - started > self.time_budget_s
+            if over_time and calls >= self.min_calls and not getattr(self, "_told", False):
+                self._told = True
+                LIVE.event("warn", f"[{self.name}] time budget {self.time_budget_s}s used (AI rate limits); answering now")
+            last = calls >= self.max_steps or (over_time and calls >= self.min_calls)
+            if self.time_budget_s and time.monotonic() - started > 2 * self.time_budget_s:
+                LIVE.event("warn", f"[{self.name}] AI too slow (rate limits); using the measured fallback")
+                return None, trace
+            user = (f"GOAL: {goal}\n\nCONTEXT:\n{json.dumps(context, default=str)[:2500]}"
                     f"\n\nAVAILABLE TOOLS (request one through the JSON reply):\n{tool_list}\n\nEVIDENCE SO FAR:\n"
-                    + (json.dumps(trace)[-3500:] if trace else "nothing yet")
+                    + (json.dumps(trace)[-3000:] if trace else "nothing yet")
                     + ("\n\nTool budget used up. Give your final answer now." if last else ""))
             data, _ = ask_json(f"{self.name}_step{step}", self.system, user, offline=self.offline, max_tokens=700, tool_agent=True)
             if not data:

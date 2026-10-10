@@ -220,7 +220,7 @@ def investigate(cfg, graph, res, offline=False, symptoms=None):
         "Use low confidence until independent methods and intervention are verified, not just because the fault is known. "
         "Keep suggested_fix empty if the evidence does not support a specific remedy. Docker healthchecks alone "
         "do not restart containers; restart is recovery, not proof of a root-cause fix.",
-        make_tools(cfg, graph), INVESTIGATION_SCHEMA, max_steps=5, offline=offline,
+        make_tools(cfg, graph), INVESTIGATION_SCHEMA, max_steps=4, offline=offline, prefetch=True, time_budget_s=45,
         starters=[("list_containers", {})] + [("container_logs", {"service": n, "lines": 20}) for n in
                                               (res.get("stuck_services") or [st["target"] for st in res.get("steps", [])])[:3]])
     final, trace = agent.run(f"Explain the root cause of what happened in experiment {res.get('id')}.", facts)
@@ -451,7 +451,8 @@ def diagnose_blind(res, cfg, graph, offline=False):
             "Paused=true supports pause; an exited state supports a crash. Probe latency locates a dependency path, "
             "not necessarily the slow component. Healthy logs do not rule out dependency latency. "
             "Post-restoration state does not prove fault-window health. Never read files or injection metadata.",
-            tools, schema, max_steps=5, offline=False, starters=[("list_containers", {})])
+            tools, schema, max_steps=4, offline=False, starters=[("list_containers", {})], prefetch=True,
+            time_budget_s=45)
         try:
             answer, trace = agent.run("Identify the fault and target from this blind evidence packet.", context)
             checked = _validated_blind_guess(answer, cfg)

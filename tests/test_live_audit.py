@@ -82,6 +82,39 @@ from agentic.nodes.execute import fix_statuses  # noqa: E402
 st = fix_statuses([{"id": "F", "rows": ["E1", "E5"]}], [{"id": "E1", "rpn_before": 700, "rpn_after": 98}])
 checks["verifier: skipped E5 reported as untested"] = st["F"]["status"] == "not_improved" and st["F"]["untested"] == ["E5"]
 
+# 7) agent kit: prefetch gathers evidence by code, so the AI can answer after ONE call
+import core.agentkit as AK  # noqa: E402
+from core.agentkit import ReActAgent, Tool  # noqa: E402
+calls = []
+AK.ask_json = lambda *a, **k: (calls.append(1) or {"thought": "t", "final": {"root_cause": "from prefetched evidence"}}, "fake")
+tools = {"list_containers": Tool("list_containers", "d", [], lambda: "redis exited"),
+         "container_logs": Tool("container_logs", "d", ["service", "lines"], lambda service, lines: "log")}
+fin, tr = ReActAgent("D", "r", tools, {"root_cause": "x"}, max_steps=4, prefetch=True,
+                     starters=[("list_containers", {}), ("container_logs", {"service": "worker", "lines": 20})]).run("g", {})
+checks["agent: prefetch -> answer after 1 AI call"] = fin == {"root_cause": "from prefetched evidence"} and len(calls) == 1 and len(tr) == 2
+
+# 8) agent kit: time budget forces a final answer instead of waiting on rate limits forever
+import time as _t  # noqa: E402
+seq = iter([{"thought": "t", "tool": "list_containers", "args": {}},
+            {"thought": "t", "tool": "container_logs", "args": {"service": "a", "lines": 1}},
+            {"thought": "t", "tool": "container_logs", "args": {"service": "b", "lines": 1}},
+            {"thought": "t", "final": {"root_cause": "forced"}}])
+def slow(*a, **k):
+    _t.sleep(0.4)
+    return next(seq), "fake"
+AK.ask_json = slow
+fin, tr = ReActAgent("D2", "r", tools, {"root_cause": "x"}, max_steps=9, time_budget_s=0.7).run("g", {})
+checks["agent: time budget makes it answer early"] = fin == {"root_cause": "forced"} or (fin is None and len(tr) <= 3)
+
+# 9) Cartographer keeps a valid AI recon even when the app source is not cloned
+import agentic.nodes.cartographer as CA  # noqa: E402
+CA.recon_agent = lambda *a, **k: {"final": {"single_points_of_failure": ["redis", "nope"],
+    "risks": [{"service": "worker", "weakness": "no restart policy", "evidence": "service_config(worker): restart=no"}],
+    "hypotheses_to_test": ["if redis dies the worker exits"]}, "trace": []}
+CA.SOURCE_AVAILABLE = lambda: False
+tm = CA.cartographer_node({"graph": graph})["threat_model"]
+checks["cartographer: AI recon kept without source code"] = tm["source"] == "agent" and tm["single_points_of_failure"] == ["redis"] and tm["risks"][0]["service"] == "worker"
+
 for k, v in checks.items():
     print(("PASS " if v else "FAIL ") + k)
 print("ALL CHECKS PASSED" if all(checks.values()) else "SOME CHECKS FAILED")
