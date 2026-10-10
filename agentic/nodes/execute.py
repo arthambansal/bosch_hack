@@ -135,14 +135,22 @@ def verify_node(state):
         from core.heal import apply_fixes
         for f in rolled:
             w = statuses[f["id"]]["worse"]
-            LIVE.event("guard", f"[Verifier] {f['id']} made {w['id']} worse ({w['rpn_before']} -> {w['rpn_after']}): rolled back")
-            _notify("fix_rolled_back", f"Fix rolled back: {f['id']}",
-                    f"{f['id']} made {w['id']} worse (RPN {w['rpn_before']} -> {w['rpn_after']}), so ChaosPilot undid it.",
-                    {"fix": f["id"], "experiment": w["id"]})
-        if apply_fixes(kept, engine().cfg):           # an empty list restores the base compose
+            LIVE.event("guard", f"[Verifier] {f['id']} made {w['id']} worse ({w['rpn_before']} -> {w['rpn_after']}): rolling back")
+        done = apply_fixes(kept, engine().cfg)        # an empty list restores the base compose
+        if done:
             time.sleep(12)                            # let recreated containers come up
         else:
             LIVE.event("warn", "[Verifier] rollback: docker compose could not re-apply the kept fixes")
+        for f in rolled:                              # tell people only AFTER the rollback has really finished (or failed)
+            w = statuses[f["id"]]["worse"]
+            if done:
+                _notify("fix_rolled_back", f"Fix rolled back: {f['id']}",
+                        f"{f['id']} made {w['id']} worse (RPN {w['rpn_before']} -> {w['rpn_after']}), so ChaosPilot undid it.",
+                        {"fix": f["id"], "experiment": w["id"]})
+            else:
+                _notify("fix_rollback_failed", f"Rollback FAILED: {f['id']}",
+                        f"{f['id']} made {w['id']} worse but docker compose could not undo it. Check the sandbox by hand.",
+                        {"fix": f["id"], "experiment": w["id"]})
     for f in kept:
         if statuses[f["id"]]["status"] == "verified":
             rows = [c for c in cmp if c["id"] in f.get("rows", [])]

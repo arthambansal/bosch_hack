@@ -303,15 +303,18 @@ def format_table(lines):
 # ------------------------------------------------------------------------------------------------ judge mode
 def _read_request(valid_ids):
     """Consume runs/mystery_request.json. Returns a valid choice id, or None. A bad or used file is always removed."""
+    claimed = REQUEST_FILE + ".claimed"
     try:
-        with open(REQUEST_FILE) as f:
-            data = json.load(f)
+        os.replace(REQUEST_FILE, claimed)             # atomic: only one reader can ever claim a request
     except OSError:
         return None
-    except ValueError:
+    try:
+        with open(claimed) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
         data = {}
     try:
-        os.remove(REQUEST_FILE)
+        os.remove(claimed)
     except OSError:
         pass
     choice = data.get("choice_id") if isinstance(data, dict) else None
@@ -344,6 +347,7 @@ def wait_loop(cfg, graph, offline=False):
                         time.sleep(0.3)
                 if choice is None:
                     break
+                st.set(state="injected")                              # request claimed: the dashboard now refuses a 2nd pick (needs "idle")
                 try:
                     _run_one(eng, cfg, graph, _pick(items, choice), len(load_trials()) + 1, offline, by, st)
                 except RuntimeError as exc:

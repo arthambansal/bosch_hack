@@ -25,7 +25,7 @@ checks["a failing notifier never changes the node result"] = announced("reporter
 import ast  # noqa: E402
 import glob  # noqa: E402
 
-KINDS = {"kill_switch", "root_cause", "fix_verified", "fix_rolled_back", "mystery_reveal", "report", "gray_failure"}
+KINDS = {"kill_switch", "root_cause", "fix_verified", "fix_rolled_back", "fix_rollback_failed", "mystery_reveal", "report", "gray_failure"}
 bad, found = [], 0
 for path in glob.glob("core/*.py") + glob.glob("agentic/**/*.py", recursive=True):
     for node in ast.walk(ast.parse(open(path).read())):

@@ -14,6 +14,7 @@ _COLORS = {
     "gray_failure": 0xE74C3C,
     "fix_verified": 0x2ECC71,
     "fix_rolled_back": 0xE67E22,
+    "fix_rollback_failed": 0xE74C3C,
     "root_cause": 0x3498DB,
     "mystery_reveal": 0x3498DB,
     "report": 0x3498DB,
