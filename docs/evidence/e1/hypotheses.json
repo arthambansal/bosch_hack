@@ -1,0 +1,20 @@
+[
+  {
+    "id": "H1",
+    "statement": "If redis DNS resolution fails in GetIp, OpenRedisConnection does not retry it; Main returns exit code 1. Without a restart policy the worker stays down and accepted votes stop being processed.",
+    "source": "code",
+    "evidence": [
+      "worker/Program.cs:62:             catch (Exception ex)",
+      "worker/Program.cs:65:                 return 1;",
+      "worker/Program.cs:108:             var ipAddress = GetIp(hostname);",
+      "worker/Program.cs:118:                 catch (RedisConnectionException)",
+      "worker/Program.cs:127:             => Dns.GetHostEntryAsync(hostname)"
+    ],
+    "affected": [
+      "worker",
+      "redis"
+    ],
+    "priority": "high",
+    "status": "open"
+  }
+]
