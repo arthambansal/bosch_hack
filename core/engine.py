@@ -214,6 +214,7 @@ class Engine:
                 "fault_window_s": round(t_restore - t_inject, 1), "probes": window,
                 "recovery_s": recovery_s, "guard_log": guard_log[-10:],
                 "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
+                "faults_injected": [f.describe() for f in faults],
                 "prediction": pred, "prediction_check": check,
                 "stuck_services": stuck, "stuck_details": stuck_details}
 

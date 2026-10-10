@@ -102,13 +102,29 @@ try:
     from core.agentkit import ReActAgent, Tool
     script = iter([{"thought": "t", "final": {"root_cause": "guess"}},          # premature: must be rejected
                    {"thought": "t", "final": {"root_cause": "guess again"}},    # premature again: rejected again
-                   {"thought": "t", "tool": "probe", "args": {}},
-                   {"thought": "t", "tool": "probe", "args": {}},
+                   {"thought": "t", "tool": "probe", "args": {"a": 1}},
+                   {"thought": "t", "tool": "probe", "args": {"a": 2}},
                    {"thought": "t", "final": {"root_cause": "evidence-based"}}])
     real_ask = AK.ask_json
     AK.ask_json = lambda *a, **k: (next(script), "fake")
-    tools = {"probe": Tool("probe", "d", [], lambda: "observation")}
+    tools = {"probe": Tool("probe", "d", ["a"], lambda a: "observation")}
     ev_final, ev_trace = ReActAgent("T", "r", tools, {"root_cause": "x"}, max_steps=6).run("g", {})
+    # --- a repeated identical call is skipped (not counted, not run again) ---
+    runs = []
+    script2 = iter([{"thought": "t", "tool": "probe", "args": {"a": 1}},
+                    {"thought": "t", "tool": "probe", "args": {"a": 1}},        # repeat: skipped
+                    {"thought": "t", "tool": "nope", "args": {}},               # unknown tool: not counted
+                    {"thought": "t", "tool": "probe2", "args": {}},
+                    {"thought": "t", "final": {"root_cause": "ok"}}])
+    AK.ask_json = lambda *a, **k: (next(script2), "fake")
+    tools2 = {"probe": Tool("probe", "d", ["a"], lambda a: runs.append(a) or "obs"), "probe2": Tool("probe2", "d", [], lambda: "obs2")}
+    rep_final, rep_trace = ReActAgent("T2", "r", tools2, {"root_cause": "x"}, max_steps=5).run("g", {})
+    # --- model wastes 3 steps (unknown + repeated tools): code gathers evidence, agent still concludes ---
+    script3 = iter([{"thought": "t", "tool": "exec", "args": {"cmd": "ls"}}] * 3 + [{"thought": "t", "final": {"root_cause": "from-evidence"}}])
+    AK.ask_json = lambda *a, **k: (next(script3), "fake")
+    tools3 = {"probe": Tool("probe", "d", ["a"], lambda a: "obs-" + str(a)), "probe2": Tool("probe2", "d", [], lambda: "obs2")}
+    st_final, st_trace = ReActAgent("T3", "r", tools3, {"root_cause": "x"}, max_steps=5,
+                                    starters=[("probe", {"a": 1}), ("probe2", {})]).run("g", {})
     AK.ask_json = real_ask
     # --- STOP ends an approval wait immediately ---
     open(STOP_FILE, "w").close()
@@ -125,6 +141,10 @@ try:
     checks = {
         "agent cannot conclude without 2 real tool calls":
             (ev_final or {}).get("root_cause") == "evidence-based" and sum(1 for t in ev_trace if t["tool"] == "probe") == 2,
+        "repeated call skipped, unknown tool not counted":
+            len(runs) == 1 and (rep_final or {}).get("root_cause") == "ok" and sum(1 for t in rep_trace if t["tool"] in tools2) == 2,
+        "after 3 wasted steps, code gathers evidence and agent concludes":
+            (st_final or {}).get("root_cause") == "from-evidence" and sum(1 for t in st_trace if t["tool"] in tools3) == 2,
         "approval {approved:true/false} and legacy {answer} formats":
             fmt == {"true": "yes", "false": "no", "legacy": "yes"},
         "STOP ends an approval wait at once": stop_wait_answer == "no" and stop_wait_s < 3,
