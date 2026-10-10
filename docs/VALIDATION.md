@@ -15,6 +15,16 @@
 
 Only Tejas-owned files are changed: Cartographer, Reporter, `core/code_tools.py`, `core/report_extras.py`, README and docs. No schemas, state keys, Knowledge Store tables, planner, Governor, engine, sandbox compose, TESTLOG or Dipen files change. Existing `threat_model.hypotheses_to_test` remains strings. Section 8.2 typed Hypothesis messages are saved as a separate JSON artifact pending Artham's contract integration. Reporter adds only its existing documented `summary` field; supplemental timings/heatmap live in reports.
 
+## Cartographer citation-validation update
+
+AI hypotheses no longer have to equal the predefined W1 record. Each accepted hypothesis must retain the exact Section 8.2 keys, have a unique ID, use `source: code` and `status: open`, and name only services in the dependency map. Evidence strings use `relative/path:positive_line_number: exact complete source line`. Each quote is checked against the current source with the existing confined, read-only `read_file` tool; only outer indentation is ignored. Function declaration lines can be cited alongside mechanism lines. At most 20 hypotheses and 12 citations per hypothesis are accepted per response.
+
+Malformed records, duplicate IDs, nonexistent or stale lines, fabricated/partial quotes, traversal paths, absolute paths and unknown services are rejected. Valid findings in a mixed response survive independently. If no source hypothesis survives, the existing W1/dependency fallback is used with `source: rules`. Verified hypotheses are projected into the existing string list and separate typed artifact; additional model keys never enter the shared threat model. Cached model answers are not mutated.
+
+The new regression scenarios in `docs/test_tejas.py` use a small synthetic pop-before-save source fixture and simulated model replies. They demonstrate acceptance and rejection behaviour, not live AI discovery or a measured application failure. Citation verification proves that quoted text exists; it does not prove the proposed causal mechanism. All findings stay open pending experiment evidence. This update touches only the Cartographer, Tejas's test script and this document.
+
+Validation of this update: the existing graph mock returned **ALL CHECKS PASSED** (7 checks); the isolated hypothesis-logic tests returned **HYPOTHESIS LOGIC CHECKS PASSED** with source-tool responses mocked; Python compilation and `git diff --check` passed. The full `docs/test_tejas.py` suite was attempted but blocked at the existing filesystem confinement test by `PermissionError: [WinError 5]` while resolving its temporary source root. Both available Python runtimes hit the same sandbox restriction, and the session approval policy disallowed elevated execution. Re-run `python docs/test_tejas.py` in the user's normal local terminal before committing/pushing this update. This is not recorded as a full-suite pass or a live-model evaluation.
+
 ## Required owner follow-ups
 
 **Artham:** fix Windows stdin `select()` approval, require human approval for data-store kills, fix the `max=1` combined fallback, and integrate typed Hypothesis persistence through the canonical schemas/state when ready. Tejas does not change those contracts.
