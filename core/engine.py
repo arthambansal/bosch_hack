@@ -54,9 +54,24 @@ class Engine:
         self.cfg, self.graph = cfg, graph
         self.prober = Prober(cfg)
         self.active = []          # faults currently applied (so Ctrl+C can always undo them)
+        self.oracle = None        # Truth Oracle (core/truth.py), set by agentic/runtime.py or core/mystery.py
         LIVE.set(graph=graph, thresholds=cfg["safety"])
 
     def publish(self, **extra):
+        if self.oracle is not None:
+            try:
+                truth = self.oracle.snapshot()
+                extra.setdefault("truth", truth)
+                status = truth.get("status")
+                if status == "diverged" and getattr(self, "_truth_status", None) != "diverged":
+                    bad = [i["name"] for i in truth.get("invariants", []) if i.get("ok") is False]
+                    LIVE.event("warn", f"[Truth] GRAY FAILURE: probes look healthy but users are affected ({', '.join(bad)})")
+                    from .notify import notify
+                    notify("gray_failure", "Gray failure detected", "Monitoring is green but votes are not being counted.",
+                           {"failing invariants": ", ".join(bad) or "unknown"})
+                self._truth_status = status
+            except Exception:  # noqa: BLE001 - the oracle must never break the run
+                pass
         LIVE.set(probes=self.prober.snapshot(), **extra)
 
     def _sleep_publishing(self, seconds):
@@ -107,15 +122,21 @@ class Engine:
                 store.clear_observation(exp["id"])
         except Exception as exc:
             LIVE.event("warn", f"Observer memory unavailable ({type(exc).__name__})")
-        LIVE.event("info", f"=== {exp['id']}: {exp['name']} ===")
-        LIVE.event("ai", f"Why: {exp['reason']}")
-        LIVE.set(experiment=exp, guard={"ticks": 0, "reasons": [], "tripped": False})
+        hidden = bool(exp.get("hidden"))                       # mystery mode: the dashboard and log must not reveal the fault
+        LIVE.event("info", f"=== {exp['id']}: {'Mystery fault' if hidden else exp['name']} ===")
+        if not hidden:
+            LIVE.event("ai", f"Why: {exp['reason']}")
+        LIVE.set(experiment=({"id": exp["id"], "name": "Mystery fault", "steps": [], "reason": "hidden",
+                              "predicted_probes": []} if hidden else exp),
+                 guard={"ticks": 0, "reasons": [], "tripped": False})
 
         try:
             faults = [Fault(st["type"], st["target"], cfg, self.prober, st.get("params")) for st in exp["steps"]]
         except SafetyError as e:
             LIVE.event("guard", f"REFUSED by safety check: {e}")
             return {"id": exp["id"], "name": exp["name"], "status": "refused", "error": str(e)}
+        for f in faults:
+            f.hidden = hidden
 
         down = self._stopped()
         if down:
@@ -142,7 +163,8 @@ class Engine:
                     aborted = f"injection failed: {out}"
                     break
                 self.active.append(f)
-                LIVE.set(faulted=[{"target": x.target, "type": x.type} for x in self.active])
+                LIVE.set(faulted=[({"target": "hidden", "type": "hidden"} if hidden else {"target": x.target, "type": x.type})
+                                  for x in self.active])
             if aborted:
                 break
             tripped, reasons, snap = guard.check(since=t_inject)
@@ -190,7 +212,7 @@ class Engine:
             _, logs = docker("logs", "--tail", "12", c, timeout=10)
             stuck_details[n] = {"exit_code": code.strip(), "last_logs": [x[:200] for x in logs.splitlines()[-12:]]}
         if stuck:
-            LIVE.event("guard", f"CASCADE FAILURE: {stuck} crashed and did NOT come back on their own "
+            LIVE.event("guard", f"CASCADE FAILURE: {'a service' if hidden else stuck} crashed and did NOT come back on their own "
                                 f"(probes look healthy, but the pipeline is silently broken)")
             self._start_services(stuck)   # manual rescue so the next experiment starts clean
         sent1, c1 = self._quiesce()
@@ -254,7 +276,23 @@ class Engine:
                 "prediction": pred, "prediction_check": check,
                 "stuck_services": stuck, "stuck_details": stuck_details,"observation": observation}
         self._save_observation(observation)
+        self._after_result(result, t_inject, t_restore, hidden)
         return result
+
+    def _after_result(self, result, t_inject, t_end, hidden):
+        """Day 2 extras for the dashboard and Discord. Every step is best-effort: it can never change the result."""
+        try:
+            if self.oracle is not None:
+                result["truth"] = self.oracle.window(t_inject, t_end)
+            from .report_extras import impact_of
+            LIVE.set(impact=impact_of(result))
+            reason = result.get("abort_reason") or ""
+            if "KILL SWITCH" in reason:
+                from .notify import notify
+                notify("kill_switch", "Kill switch fired" if hidden else f"Kill switch fired in {result['id']}", reason[:300],
+                       {"experiment": result["id"], "fault window": f"{result['fault_window_s']} s"})
+        except Exception as exc:  # noqa: BLE001
+            LIVE.event("warn", f"[extras] skipped ({type(exc).__name__}: {exc})")
 
     def _save_observation(self, observation):
         """Hand the Observer's summary to the Knowledge Store (the Diagnostician and Executor read it from there)."""

@@ -7,7 +7,7 @@ from core.engine import Engine
 from core.faults import panic
 from agentic.gate import GATE_SYNC
 
-RT = {"cfg": None, "engine": None, "run_dir": None}
+RT = {"cfg": None, "engine": None, "run_dir": None, "oracle": None}
 
 
 def cfg():
@@ -35,10 +35,34 @@ def start(graph):
         os.remove(STOP_FILE)
     eng = Engine(cfg(), graph)
     eng.prober.start()
-    RT.update(engine=eng, run_dir=d)
+    oracle = start_oracle(eng)
+    RT.update(engine=eng, run_dir=d, oracle=oracle)
     LIVE.set(phase="running", run_status="running", run_dir=d, agent_active=None, approval_request=None, gate_sync=GATE_SYNC,
              approval_result=None, cleanup=None, report_path=None)
     return d
+
+
+def start_oracle(eng):
+    """Truth Oracle (gray-failure detector, core/truth.py). Best-effort: a failure here never stops a run."""
+    try:
+        from core.truth import TruthOracle
+        oracle = TruthOracle(cfg(), eng.prober)
+        oracle.start()
+        eng.oracle = oracle
+        return oracle
+    except Exception as exc:  # noqa: BLE001
+        LIVE.event("warn", f"[Truth] oracle unavailable ({type(exc).__name__}: {exc})")
+        return None
+
+
+def stop_oracle():
+    oracle = RT.get("oracle")
+    if oracle is not None:
+        try:
+            oracle.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        RT["oracle"] = None
 
 
 def finish():
@@ -49,6 +73,7 @@ def finish():
         eng._restore_all()
     if stopped:
         panic(cfg())
+    stop_oracle()
     if eng:
         eng.prober.stop()
     LIVE.set(phase="stopped" if stopped else "ran", run_status="stopped" if stopped else "completed", agent_active=None,

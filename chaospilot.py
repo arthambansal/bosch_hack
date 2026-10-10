@@ -14,6 +14,8 @@
   python chaospilot.py report             score + AI post-mortem              (--compare <old run dir>)
   python chaospilot.py dashboard          live dashboard on http://localhost:8000
   python chaospilot.py heal               FMEA -> pick fixes -> apply -> re-run -> prove RPN dropped
+  python chaospilot.py mystery            hidden fault, blind diagnosis, reveal   (--wait = judge mode, --trials N, --choice M-kill-redis)
+  python chaospilot.py replay             re-run saved never-again scenarios      (--scenario scenarios/<id>.json)
   python chaospilot.py panic              restore every container, no questions asked
   python chaospilot.py demo               map -> baseline -> plan -> run -> report
 """
@@ -145,6 +147,38 @@ def cmd_heal(a, cfg):
         print(f"  {c['id']} {c['failure_mode'][:34]:34} RPN {c['rpn_before']:>4} -> {c['rpn_after']:>4}  (-{c['reduction_pct']}%)")
 
 
+def cmd_mystery(a, cfg):
+    """A hidden fault the agents must diagnose from evidence alone. Same kill switch and sandbox rules as every experiment."""
+    from agentic import runtime
+    from core import mystery
+    graph = need(DEPS_FILE, "map")
+    runtime.RT["cfg"] = cfg
+    if a.wait:
+        mystery.wait_loop(cfg, graph, offline=a.offline)
+        return
+    if a.trials and a.trials > 1:
+        lines = mystery.run_trials(a.trials, cfg, graph, offline=a.offline)
+    else:
+        lines = [mystery.run_trial(a.choice or "random", cfg, graph, offline=a.offline, chosen_by="terminal" if a.choice else "random")]
+    print("\n" + mystery.format_table(lines))
+    print(f"\nAll trials so far: {mystery.TRIALS_FILE}")
+
+
+def cmd_replay(a, cfg):
+    """Never again: replay saved failure scenarios against the current system. Exit code 1 if any fails (CI uses this)."""
+    import glob
+    from core import regression
+    paths = [a.scenario] if a.scenario else sorted(glob.glob(os.path.join(ROOT, "scenarios", "*.json")))
+    if not paths:
+        sys.exit("No scenarios found in scenarios/. They are created when a confirmed failure is exported.")
+    failed = 0
+    for path in paths:
+        r = regression.replay(path, cfg)
+        failed += 0 if r.get("passed") else 1
+        print(f"{'PASS' if r.get('passed') else 'FAIL'}  {r.get('scenario_id') or os.path.basename(path)}  {'; '.join(map(str, r.get('details') or []))[:160]}")
+    sys.exit(1 if failed else 0)
+
+
 def cmd_dashboard(a, cfg):
     subprocess.run([sys.executable, os.path.join(ROOT, "dashboard", "server.py")])
 
@@ -161,7 +195,7 @@ def cmd_demo(a, cfg):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["up", "map", "baseline", "plan", "run", "agent", "autopilot", "graph", "report", "heal", "dashboard", "panic", "demo"])
+    p.add_argument("command", choices=["up", "map", "baseline", "plan", "run", "agent", "autopilot", "graph", "report", "heal", "mystery", "replay", "dashboard", "panic", "demo"])
     p.add_argument("--offline", action="store_true", help="use cached AI answers (no internet needed)")
     p.add_argument("--only", help="comma list of experiment ids, e.g. E1,E3")
     p.add_argument("--compare", help="earlier run folder for before/after comparison")
@@ -171,6 +205,10 @@ def main():
     p.add_argument("--goal", help="autopilot: a what-if question for the agents to investigate")
     p.add_argument("--approve", action="store_true", help="autopilot: ask a human before high-risk experiments")
     p.add_argument("--no-heal", action="store_true", help="autopilot: report only, do not apply fixes")
+    p.add_argument("--wait", action="store_true", help="mystery: judge mode, wait for a pick on the dashboard")
+    p.add_argument("--trials", type=int, help="mystery: run N random hidden-fault trials and print an accuracy table")
+    p.add_argument("--choice", help="mystery: a menu id such as M-kill-redis (default: random)")
+    p.add_argument("--scenario", help="replay: one scenario file (default: all in scenarios/)")
     p.add_argument("--fix", nargs="*", help="fix files from sandbox/fixes/ to apply on `up`")
     a = p.parse_args()
     globals()["cmd_" + a.command](a, load_config())
