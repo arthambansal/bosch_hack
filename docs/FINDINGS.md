@@ -1,50 +1,71 @@
-# Evidence-backed findings — 10 Oct 2026
+# Evidence-backed findings — Day 2 update
 
-## Provenance
+## Current evidence boundary
 
-- ChaosPilot base: `9b6fdd82dc4f464a997685d36347a523b05dc10e`.
-- Inspected Voting App source: `63e9150ca17af4ed05880d4245e486481f73fcb4`.
-- Actual experiment: `runs/auto_20261010_143539`; preserved relative copies in `docs/evidence/e1/`.
-- No API key configured; source-derived Cartographer and report fallbacks ran. Source checkout and prebuilt Docker image provenance are distinct: this run does not establish that the image was built from that exact source commit.
-- User explicitly approved E1 Redis kill. No combined faults or configuration fixes ran. The earlier full-graph attempt failed before injection; it is not experiment evidence.
+This checkout contains raw evidence for the approved Day 1 E1 run in
+`docs/evidence/e1/`. The Day 2 assignment names `auto_20261010_153557` and
+`auto_20261010_170117` from Artham's laptop, but those raw folders were not supplied
+locally. The statement below is limited to each named run, not a claim about all runs.
 
-## Healthy baseline [MEASURED]
+| Claim supplied in the assignment | Required evidence | Verification here |
+|---|---|---|
+| Worker exited with code 1 after Redis kill and stayed down | results.json stuck_details and timed logs | Pending artifacts |
+| Combined fault lost 17 of 40 accepted votes | delivery counters, steps and measurement window | Pending artifacts |
+| E2 RPN improved from 270 to 30 | fmea.json, verification.json, applied-fix identity/status | Pending artifacts |
 
-15 seconds: vote_write 31 requests, 31 successful, p50 27.3 ms, p95 41.3 ms; result_page 31 requests, 31 successful, p50 21.5 ms, p95 32.8 ms. Delivery audit: 31 accepted, 31 delivered. This is aggregate row-count evidence, not unique canary tracing.
+These are teammate-reported claims, not measurements independently checked here.
+They must be replaced by linked raw records before presenting them as golden-run
+results. No scenario JSON is fabricated from these prose numbers.
 
-## E1 Redis kill [MEASURED]
+## Preserved Day 1 measurements
 
-| Field | Recorded result |
+Run `auto_20261010_143539`, source checkout `63e9150ca17af4ed05880d4245e486481f73fcb4`,
+ChaosPilot base `9b6fdd82dc4f464a997685d36347a523b05dc10e`.
+Source and prebuilt image provenance are distinct; this does not establish the image
+was built from that source commit. Human approval covered one Redis kill only.
+
+| Field | Measured value |
 |---|---|
-| Status | aborted by kill switch |
-| Fault window | 4.5 s |
-| Guard observations | breaches at 3.5, 4.0, 4.5 s; rolling error rate 50% |
-| Fault-window vote probe | 3 requests, 1 successful; error rate 0.667; p95 2538.7 ms |
-| Fault-window result probe | 10 requests, 10 successful; p95 26.4 ms |
-| First HTTP error | 0.5 s from injection |
-| HTTP recovery | 1.5 s after restoration; three-success streak |
-| Delivery audit | 24 accepted, 24 delivered, 0 recorded lost |
-| Stuck services | none |
-| FMEA | S=7, O=7, D=2; RPN=98, Medium priority |
-| Resilience score | 95/100, A, for this single recorded experiment only |
+| Baseline duration / accepted / delivered | 15 s / 31 / 31 |
+| Baseline vote p50 / p95 | 27.3 / 41.3 ms |
+| Baseline result p50 / p95 | 21.5 / 32.8 ms |
+| E1 status / fault window | Kill-switch abort / 4.5 s |
+| Guard breach observations | 3.5, 4.0, 4.5 s; rolling error rate 50% |
+| Fault-window voting requests / successes | 3 / 1 |
+| Fault-window result requests / successes | 10 / 10 |
+| First HTTP error / recovery after restoration | 0.5 s / 1.5 s |
+| E1 accepted / delivered / recorded lost | 24 / 24 / 0 |
+| Stuck services | None |
+| S / O / D / RPN | 7 / 7 / 2 / 98 |
+| Single-experiment score | 95 out of 100, grade A |
 
-The fault-window request error rate differs from the rolling guard rate because the windows differ. The score is computed by the existing deterministic scorer; occurrence is a documented scoring prior, not an observed population frequency. A single short aborted test does not establish general resilience or zero possible loss.
+Raw files: `docs/evidence/e1/results.json`, `baseline.json`, `fmea.json`, `events.log`
+and `approval_evidence.json`. Aggregate delivery counts do not prove per-vote delivery.
+Occurrence is a scoring prior, not an observed population rate. HTTP recovery is not
+proof of end-to-end recovery. End-to-end MTTD/MTTR were unavailable in this run.
 
-## W1 source hypothesis [FROM SOURCE] [HYPOTHESIS]
+## W1 [HYPOTHESIS] and run-specific outcome
 
-`worker/Program.cs:108` calls `GetIp` before the Redis retry loop; line 118 catches only `RedisConnectionException`; lines 126–131 resolve DNS via `Dns.GetHostEntryAsync`; `Main` catches `Exception` at line 62 and returns 1 at line 65. If DNS resolution fails, this path can exit the worker. The sandbox compose has no worker restart policy.
+Worker source resolves DNS in GetIp before OpenRedisConnection's Redis-only retry
+handler; Main catches other exceptions and returns 1. Without a restart policy, a
+DNS failure could leave the worker down. Citations are in the preserved hypotheses.
+The Day 1 E1 trial did not reproduce that failure. This neither refutes W1 nor
+contradicts the later teammate-reported worker crash: the preconditions and evidence
+must be compared. Do not label W1 globally unconfirmed or globally confirmed from
+this one trial.
 
-**Outcome:** W1 was **not reproduced** by this Redis-kill trial. No worker exit or stuck-worker evidence was recorded. H1 stays `open`; it is neither confirmed nor refuted because the DNS-failure precondition was not observed. The blueprint's historical W1 measurement is supplied context, not a measurement made in this session. No DNS-error log is invented.
+## Day 2 code validation and remaining evidence
 
-## Proposed follow-up [HYPOTHESIS]
+Report v2 derives impact, prediction/fix/mystery counters, postmortems and rollback
+rows. Regression export/replay is tested with labelled canned results. Test logs in
+`docs/evidence/day2_*_test.txt` are simulated checks, never Docker experiment evidence.
+The reporter cannot reconstruct exact outage intervals from rolling guard summaries;
+it explicitly labels its fault-window proxy.
 
-After separate human approval, test a discriminating DNS-resolution failure under the sandbox policy and gather worker exit timestamps, logs, queue depth, DB growth and unique canary delivery. Pin source/image provenance before attributing exact source behaviour to an image. Retry/backoff and restart policy are proposed mitigations only; no before/after improvement, RPN reduction or trade-off is claimed.
+Live replay could not be run from this session: Docker returned permission denied
+connecting to `dockerDesktopLinuxEngine`. No live AI evaluation, Day 2 fix/rollback
+measurement, mystery accuracy or GitHub Actions success is claimed. The previous
+Windows gate failure was historical; the current gate uses a background input thread.
 
-## Blockers and limits
-
-- Observer canary/timestamp module is absent at this base. End-to-end MTTD and MTTR are unknown; 0.5 s and 1.5 s above describe HTTP probes only.
-- Full CLI approval fails on Windows: `OSError: [WinError 10038] An operation was attempted on something that is not a socket`, in `agentic/graph.py` `select.select([sys.stdin], [], [], 0.5)`.
-- `--max 1` rule fallback selected `COMBINED: worker down, then redis crash`; no approval was given for that proposal and no injection ran. Single E1 was executed with the documented harness.
-- Current Governor requests approval for combined faults only, weaker than the blueprint's data-store-kill gate. External approval was obtained for E1. Artham must integrate the complete rule.
-- No live LLM run, fix verification, regression/trade-off measurements, mystery trials, or second laptop. The blueprint definition of done is therefore not fully met.
-- No official team form or full member/contact details were supplied. Team form remains a draft.
+Golden recording, official form submission and teammate run verification remain
+pending. See `docs/day2/TEJAS_HANDOFF.md` for exact integration and evidence requests.

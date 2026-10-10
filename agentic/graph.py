@@ -61,6 +61,38 @@ def guarded(name, fn, fallback):
     return wrapper
 
 
+def announced(name, fn):
+    """Discord alerts for root_cause (after the Diagnostician) and report (after the Reporter). Best-effort: it can
+    never change what the node returned or crash the run. Signature: core.notify.notify(kind, title, text, fields=None)."""
+    if name not in ("diagnostician", "reporter"):
+        return fn
+
+    def wrapper(state):
+        before = set((state.get("investigations") or {}).keys())
+        out = fn(state)
+        try:
+            from core.notify import notify
+            if name == "diagnostician":
+                for exp_id, inv in ((out or {}).get("investigations") or {}).items():
+                    if exp_id in before or not isinstance(inv, dict) or not inv.get("root_cause"):
+                        continue
+                    conf = inv.get("confidence")
+                    notify("root_cause", f"Root cause found for {exp_id}", str(inv["root_cause"])[:300],
+                           {"experiment": exp_id, "confidence": f"{conf}" if conf is not None else "n/a",
+                            "found by": str(inv.get("by") or "diagnostician")})
+            else:
+                rep = (out or {}).get("report") or {}
+                if rep:
+                    after = f" -> {rep['after']}/100 after fixes" if rep.get("after") is not None else ""
+                    notify("report", "ChaosPilot report is ready",
+                           f"Resilience score {rep.get('resilience_score')}/100 (grade {rep.get('grade')}){after}.",
+                           {"report": str(rep.get("path_md") or "")})
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+    return wrapper
+
+
 FALLBACKS = {
     "cartographer": lambda s: {"threat_model": {"single_points_of_failure": [], "risks": [], "hypotheses_to_test": [],
                                          "source": "error"}},
@@ -85,7 +117,7 @@ def build(checkpointer=None):
                      ("approval", approval_node), ("execute", execute_node), ("evaluate", evaluate_node),
                      ("diagnostician", diagnostician_node), ("remediator", remediator_node),
                      ("verify", verify_node), ("reporter", reporter_node)]:
-        g.add_node(name, stoppable(name, guarded(name, fn, FALLBACKS[name]) if name in FALLBACKS else fn))
+        g.add_node(name, stoppable(name, guarded(name, announced(name, fn), FALLBACKS[name]) if name in FALLBACKS else announced(name, fn)))
     g.add_edge(START, "cartographer")
     g.add_edge("cartographer", "experimenter")
     g.add_conditional_edges("experimenter", lambda s: "governor" if s.get("proposal") else "remediator",

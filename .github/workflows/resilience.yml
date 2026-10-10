@@ -1,0 +1,80 @@
+name: Resilience regression
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Offline contract and feature checks
+        run: |
+          python tests/test_contract_v5.py
+          python tests/test_graph_mock.py
+          python tests/test_regression.py
+          python tests/test_report_v2.py
+      - name: Select reviewed scenarios suitable for unattended CI
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from core.common import load_config
+          cfg = load_config()
+          files = sorted(p for p in Path('scenarios').glob('*.json') if not p.name.startswith('.'))
+          selected = []
+          for path in files:
+              s = json.loads(path.read_text())
+              steps = s['steps']
+              if (len(steps) == 1 and steps[0].get('type') in ('kill', 'pause')
+                      and steps[0].get('target') in ('worker', 'result')
+                      and not cfg['services'][steps[0]['target']]['stateful']):
+                  selected.append(path)
+                  print(f'CI-safe: {path}')
+              else:
+                  print(f'Human-gated local replay only: {path}')
+          if not selected:
+              raise SystemExit('No reviewed CI-safe scenario exists; live replay cannot be claimed.')
+          Path('runs/ci_scenarios.txt').write_text(''.join(f'{path}\n' for path in selected))
+          PY
+      - name: Start base sandbox without fix overlays
+        run: |
+          python chaospilot.py up
+          python - <<'PY'
+          import time, requests
+          for _ in range(60):
+              try:
+                  if all(requests.get(url, timeout=2).ok for url in ('http://localhost:8080/', 'http://localhost:8081/')):
+                      break
+              except requests.RequestException:
+                  pass
+              time.sleep(1)
+          else:
+              raise SystemExit('Sandbox did not become ready')
+          PY
+          python chaospilot.py map
+          python chaospilot.py baseline --seconds 15
+      - name: Replay selected scenarios
+        run: |
+          while IFS= read -r scenario; do
+            python chaospilot.py replay --scenario "$scenario" || exit 1
+          done < runs/ci_scenarios.txt
+      - name: Preserve measured run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resilience-evidence
+          path: |
+            runs/
+            scenarios/.status.json
+      - name: Restore and stop disposable sandbox
+        if: always()
+        run: |
+          python chaospilot.py panic
+          docker compose -f sandbox/docker-compose.yml down

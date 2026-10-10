@@ -19,28 +19,77 @@ CATALOG = {
                       "why": "The queue lost accepted work when it crashed. Turn on append-only persistence (fsync always)."},
     "restart-policy": {"file": "restart-policy.yml",
                        "why": "Crashed containers stayed down until a human restarted them. Add `restart: unless-stopped`."},
+    "postgres-healthcheck": {"file": "postgres-healthcheck.yml",
+                             "why": "Worker and result can start before Postgres is ready. Add a Postgres readiness check and make dependent services wait for a healthy database."},
+    "postgres-recovery": {"file": "postgres-recovery.yml",
+                          "why": "Worker and result exited during the Postgres outage and did not recover within the timeout. Restart them on failure."},
 }
 
 
 def select_fixes(rows, results, graph):
-    """Return [{id, file, why, rows:[experiment ids that triggered it]}] for rows with Action Priority != Low."""
+    """Select catalog fixes from measured failure evidence; never infer recovery failure from a kill alone."""
     by_id = {r["id"]: r for r in results}
     chosen = {}
 
     def pick(fix_id, row_id):
-        chosen.setdefault(fix_id, {"id": fix_id, **CATALOG[fix_id], "rows": []})["rows"].append(row_id)
+        entry = chosen.setdefault(
+            fix_id, {"id": fix_id, **CATALOG[fix_id], "rows": []}
+        )
+        if row_id not in entry["rows"]:
+            entry["rows"].append(row_id)
 
     for row in rows:
-        if row["action_priority"] == "Low":
+        if row.get("action_priority") == "Low":
             continue
-        res = by_id.get(row["id"], {})
-        steps = res.get("steps", [])
+
+        row_id = row.get("id")
+        res = by_id.get(row_id, {})
+        steps = res.get("steps") or []
+        stuck = set(res.get("stuck_services") or [])
         lost = (res.get("delivery") or {}).get("lost") or 0
-        if lost > 0 and any(graph["services"].get(s["target"], {}).get("role") == "queue" for s in steps):
-            pick("redis-durable", row["id"])
-        if any(s["type"] == "kill" for s in steps) or res.get("stuck_services"):
-            pick("restart-policy", row["id"])
+
+        if lost > 0 and any(
+            graph.get("services", {}).get(step.get("target"), {}).get("role") == "queue"
+            for step in steps
+        ):
+            pick("redis-durable", row_id)
+
+        killed_db = any(
+            step.get("type") == "kill" and step.get("target") == "db"
+            for step in steps
+        )
+
+        # A database kill plus stuck dependents is evidence of a recovery failure.
+        if killed_db and stuck.intersection({"worker", "result"}):
+            pick("postgres-recovery", row_id)
+
+        # Keep the generic restart fix for kill faults or services left stuck.
+        if any(step.get("type") == "kill" for step in steps) or stuck:
+            pick("restart-policy", row_id)
+
     return list(chosen.values())
+
+
+def fix_entries(fixes):
+    """Convert applied catalog fixes into contract-compatible entries."""
+    entries = []
+
+    for fix in fixes:
+        if not isinstance(fix, dict) or fix.get("status") != "applied":
+            continue
+
+        entries.append({
+            "id": fix.get("id", "unknown"),
+            "title": fix.get("title", fix.get("id", "Applied fix")),
+            "kind": fix.get("kind", "compose"),
+            "for": fix.get("for", fix.get("rows", [])),
+            "why": fix.get("why", ""),
+            "diff": fix.get("diff"),
+            "status": "applied",
+            "rpn": fix.get("rpn", []),
+        })
+
+    return entries
 
 
 def apply_fixes(fixes, cfg):
@@ -274,10 +323,3 @@ return override=null. Do not claim a fix is proven before verification.
     }
     LIVE.event("ai", f"[Remediator] validated AI override using {source}")
     return fix, data.get("code_patch")
-
-
-# ---------------------------------------------------------------- Day 2 interface (Pratham) — DAY2_CONTRACT.md 4.4, 5
-def fix_entries(fixes):
-    """Turn applied catalog fixes into live_state.fixes entries (shape 4.4). STUB: minimal but valid."""
-    return [{"id": f.get("id"), "title": f.get("id"), "kind": "compose", "for": list(f.get("rows") or []),
-             "why": f.get("why", ""), "diff": None, "status": "applied", "rpn": []} for f in (fixes or [])]

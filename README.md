@@ -1,53 +1,148 @@
 # ChaosPilot
 
-A governed chaos-engineering sandbox for the Docker Example Voting App. Reasoning agents map risks, plan experiments, diagnose symptoms and recommend fixes; deterministic code injects faults, watches thresholds and computes FMEA scores.
+ChaosPilot tests resilience in an isolated Docker Example Voting App.
+Cartographer reads source and proposes testable weaknesses; Experimenter selects faults.
+Deterministic safety checks govern injection, recovery and FMEA scoring.
+Diagnostician explains observed failures; Remediator proposes fixes; verification compares risk.
+Reporter turns measured outcomes into impact, postmortems and replayable regression scenarios.
 
-## Tejas implementation
+## Four proofs
 
-- Source tools: `core/code_tools.py` exposes bounded `list_files`, numbered `read_file` and literal `grep`, confined to `sandbox/app-src`. Resolved escapes and `.git` paths are rejected; tools never write or execute source.
-- Cartographer: source-aware ReAct tools plus a deterministic W1 fallback citing `worker/Program.cs`, `GetIp`, `OpenRedisConnection` and `Main`. Section 8.2 Hypothesis records are saved to `runs/cartographer_hypotheses.json`; the existing `threat_model` state fields remain unchanged. Hypotheses remain open until supported by intervention evidence.
-- Reporter: evidence-selected AI executive summary with deterministic fallback, Observer MTTD/MTTR with sample coverage, separately labelled HTTP timings, an OR fault tree and a service × fault heatmap. Writes `report.md` and escaped `report.html`.
-- Deliverables: `docs/ARCHITECTURE.md`, `docs/FINDINGS.md`, `docs/TEAM_FORM.md`, `docs/VIDEO_SCRIPT.md` and the captioned evidence video packaged with this handoff.
+| Proof | Mechanism | Evidence status in this checkout |
+|---|---|---|
+| Truth Oracle | Unique canary votes compared with stored votes | Team interface/wiring present; real golden-run evidence pending |
+| Blind mystery diagnosis | Hidden injection, evidence-only guess, reveal and accuracy history | Harness present; no local measured trial history supplied |
+| Fix with proof and rollback | Deterministic RPN comparison and per-fix verdict | Mock-tested; cited teammate run artifacts pending |
+| Never again | Confirmed-failure export, engine replay, invariant checks, CI workflow | Offline tests pass; live replay and GitHub Actions not yet verified |
 
-## Setup in a fresh directory
+## Quick start
+
+Python 3.10+ (3.11 recommended), Git, Docker with Compose, and an isolated sandbox are required.
+In a fresh directory:
 
 ```powershell
 git clone https://github.com/arthambansal/bosch_hack.git
 cd bosch_hack
 git checkout tejas
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 git clone https://github.com/dockersamples/example-voting-app sandbox/app-src
-.\.venv\Scripts\python.exe tests/test_graph_mock.py
-.\.venv\Scripts\python.exe docs/test_tejas.py
+python tests/test_contract_v5.py
+python tests/test_graph_mock.py
+python tests/test_regression.py
+python tests/test_report_v2.py
+python docs/test_tejas.py
 ```
 
-Python 3.11+ and Docker Compose are required. On POSIX use `.venv/bin/python` instead. Source is ignored by the existing `.gitignore`; never commit application-source clones, secrets, virtual environments or generated runs.
+For the existing checkout, stay on `tejas`; do not clone again. On POSIX activate
+`.venv/bin/activate`. The source checkout remains gitignored. Keep API credentials
+in environment variables only, following `core/llm.py`; no API key is required for
+replay or mock tests. `--offline` uses cached AI responses or deterministic fallbacks.
 
-## Real sandbox validation
-
-Check that existing `chaos-*` containers and network `chaosnet` are not someone else's work before starting:
+For an isolated live sandbox:
 
 ```powershell
-docker compose -f sandbox/docker-compose.yml up -d
-.\.venv\Scripts\python.exe chaospilot.py map
-.\.venv\Scripts\python.exe chaospilot.py baseline --seconds 30
+python chaospilot.py up
+python chaospilot.py map
+python chaospilot.py baseline --seconds 15
+python chaospilot.py dashboard
 ```
 
-After a human explicitly approves **one Redis kill**, run:
+Open a second activated terminal for an approved run:
 
 ```powershell
-.\.venv\Scripts\python.exe docs/validate_e1.py --human-approved-e1
+python chaospilot.py autopilot --approve --no-heal --max 3
 ```
 
-This harness selects only `kill:redis`, checks the existing Governor, records the approval, then invokes the production Cartographer, Executor, evaluator and Reporter. It keeps the existing runtime kill switch and restoration, applies no fixes and does not select combined faults. The flag records approval already given; it is not a substitute for asking a human. Review `runs/<run>/results.json`, `events.log`, `approval_evidence.json`, `final_state.json`, `report.md` and `report.html`.
+Reports are written under `runs/auto_*/report.md` and `report.html`. Baseline comes
+before faults. Obtain human approval for data-store disruption; the main pipeline
+Governor currently gates combined faults, while the replay implementation also gates
+data-store disruption. Create `STOP` or use the dashboard STOP to halt injection.
 
-For the full graph use `chaospilot.py autopilot --approve --no-heal --max 3`. **Current upstream limitations:** Windows terminal approval uses `select()` on stdin and fails with WinError 10038. The upstream Governor requests human approval for combined faults only, rather than all data-store kills; obtain approval externally before those tests. `--max 1` fallback selects a combined experiment rather than a single Redis kill. These are Artham-owned integration issues; they are not patched here. The standalone `report` command is retired; the Reporter node or validation harness writes reports.
+## Never-again replay
 
-Set API configuration through environment variables as documented in `core/llm.py`; never commit values. No LLM key was available in this validation, so rule fallbacks were tested. `--offline` replays caches when available and otherwise uses fallback.
+Reporter exports only confirmed failures with measured fault windows and at least
+two investigation evidence quotes. Inspect `scenarios/*.json` before committing.
+Missing measurements fail checks rather than silently passing. No failed scenario
+is fabricated from the successful Day 1 E1 run.
 
-## Evidence and limits
+To explicitly restore the base configuration before a weakness demonstration (on
+your isolated sandbox, with no other active run):
 
-On 10 Oct 2026 the 15-second real baseline delivered 31/31 votes. The approved Redis-kill test triggered the kill switch after 4.5 seconds, had 0.5-second first HTTP error and 1.5-second HTTP recovery after restoration, and recorded 24/24 delivered votes. W1 was **not reproduced**; no worker was reported stuck. These are one-laptop, one-trial observations. No fix was applied or verified. Observer timestamps, canary tracing, second-laptop checks and mystery-fault trials were not supplied. End-to-end MTTD/MTTR therefore remain unknown. See `docs/FINDINGS.md` for raw evidence and exact limitations.
+```powershell
+docker compose -f sandbox/docker-compose.yml up -d --force-recreate
+python chaospilot.py map
+python chaospilot.py baseline --seconds 15
+python chaospilot.py replay --scenario scenarios/<actual-exported-id>.json
+```
 
-Every change must respect `docs/PROJECT_BLUEPRINT.md` Sections 8, 9 and 20.2. Before every push, `tests/test_graph_mock.py` must print **ALL CHECKS PASSED**. Tejas edits only his nodes, `core/code_tools.py`, `core/report_extras.py`, README and docs. `core/agents.py` is already absent at the inspected base revision; Dipen's migration and all state/schema files remain untouched.
+A reproduced weakness returns exit code 1. After an approved fix, replay against the
+fixed configuration and require PASS. `python chaospilot.py replay` runs all saved
+scenarios with the current CLI; the requested positional path / `--all` parser change
+is documented for Artham in `docs/day2/TEJAS_HANDOFF.md`. No AI is used during replay.
+
+The workflow `.github/workflows/resilience.yml` is manually triggered in GitHub
+Actions. It selects single worker/result kill/pause scenarios in a fresh base
+sandbox and skips combined or data-store scenarios, which retain local human
+approval. It fails if no CI-safe scenario exists or a selected replay fails.
+The measured CI-safe scenario `scenarios/result-pause-ci.json` records 0.6s recovery,
+32/32 delivered votes, and no stuck items. Runner reliability is still unverified,
+so the workflow remains manual.
+**The workflow has not been observed passing on GitHub; live chaos CI is not claimed.**
+
+## Architecture
+
+```mermaid
+flowchart LR
+  C[Cartographer: source hypotheses] --> E[Experimenter: rank and predict]
+  E --> G[Governor and human gate]
+  G --> X[Engine and kill switch]
+  X --> O[Probes and Truth Oracle]
+  O --> D[Diagnostician and failure memory]
+  D --> M[Remediator]
+  M --> V[Verify and rollback]
+  V --> R[Reporter: FMEA, impact, postmortems]
+  R --> S[Scenarios and regression replay]
+  S --> G
+```
+
+Details and ownership boundaries: `docs/ARCHITECTURE.md` and
+`docs/day2/DAY2_CONTRACT.md`.
+
+## Safety and scoring
+
+Targets must be configured sandbox services and carry the matching Compose project
+label. Limits: at most two faults, at most one data store down; runtime guard checks
+errors, p95 latency, blast radius, STOP and maximum duration. Restoration and traffic
+shutdown run on replay failure too. Source tools are confined/read-only; hypotheses
+remain open until experimental evidence supports them. Code patches are suggestions.
+FMEA S/O/D and RPN come from code, never an LLM; the resilience score is deterministic
+and applies to the experiments observed, not a universal reliability guarantee.
+
+## Results and honest limits
+
+| Available real evidence | Measurement |
+|---|---|
+| Day 1 healthy baseline, 15 s | 31 accepted / 31 delivered |
+| Day 1 approved Redis kill | 24 accepted / 24 delivered; no stuck worker |
+| Guard fault window / HTTP recovery after restoration | 4.5 s / 1.5 s |
+| Single-test RPN / resilience score | 98 / 95 out of 100 |
+
+These preserved records are in `docs/evidence/e1/`. They describe that trial only.
+Day 2 assignment claims (worker exit 1, combined loss 17/40, E2 RPN 270 to 30) await
+raw teammate run artifacts and are not included as locally verified results. See
+`docs/FINDINGS.md`. Outage duration uses an explicitly labelled fault-window proxy
+when intervals are unavailable; unknown measurements remain null. Trial-history
+accuracy, regression CI, real fix verification, golden video and official submission
+remain pending evidence. Mock runs are simulations and must never be cited as live results.
+
+## Team
+
+Artham: orchestration, Governor, mystery and verification. Pratham: probes, Truth
+Oracle and remediation. Dipen: diagnosis and failure memory. Samridhi: Control Room
+and notifications. Tejas: Cartographer, Reporter, regression/CI and deliverables.
+
+Before every push run the contract, graph and Tejas tests above. Stage exact owned
+files; do not stage `dependencies.local.json`, secrets, generated runs or the source
+clone. Team form and recording status: `docs/TEAM_FORM.md`, `docs/VIDEO_SCRIPT.md`.

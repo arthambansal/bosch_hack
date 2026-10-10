@@ -1,0 +1,20 @@
+# FIX: wait for Postgres readiness before starting dependent services.
+# Uses existing services only and does not require privileged mode.
+services:
+  db:
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+  worker:
+    depends_on:
+      redis:
+        condition: service_started
+      db:
+        condition: service_healthy
+  result:
+    depends_on:
+      db:
+        condition: service_healthy
