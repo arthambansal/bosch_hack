@@ -124,6 +124,10 @@ class Engine:
         while True:
             elapsed = time.time() - t_inject
             while pending and pending[0][0].get("delay_s", 0) <= elapsed:
+                if os.path.exists(STOP_FILE):                 # STOP pressed: never start another injection
+                    aborted = "manual kill switch (STOP file) before injection"
+                    LIVE.event("guard", aborted)
+                    break
                 _, f = pending.pop(0)
                 ok, out = f.apply()
                 if not ok:

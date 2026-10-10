@@ -7,7 +7,7 @@ verify   : after fixes are applied, re-runs the experiments the fixes targeted a
 """
 import os
 
-from core.common import LIVE, save_json
+from core.common import LIVE, STOP_FILE, save_json
 from core.fmea import build_fmea, compare_fmea
 
 from ..runtime import engine, run_dir
@@ -52,6 +52,9 @@ def verify_node(state):
         r = by_id.get(i)
         if not r:
             continue
+        if os.path.exists(STOP_FILE):                 # STOP between verification experiments: do not start the next one
+            LIVE.event("guard", f"[Verifier] STOP requested: skipping {i} and the rest")
+            break
         exp = {k: r.get(k) for k in ("id", "name", "steps", "reason", "hypothesis", "predicted_probes")}
         LIVE.event("info", f"[Verifier] re-running {i} against the fixed system")
         after.append(engine().run_experiment(exp))

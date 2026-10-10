@@ -9,7 +9,6 @@ and an auto-generated diagram of the graph (python chaospilot.py graph).
 """
 import json
 import os
-import select
 import sys
 import time
 
@@ -20,6 +19,7 @@ from langgraph.types import Command
 from core.common import BASELINE_FILE, DEPS_FILE, LIVE, RUNS_DIR, STOP_FILE, load_json
 
 from . import runtime
+from .gate import ask_human, read_answer
 from .nodes.execute import evaluate_node, execute_node, needs_investigation, verify_node
 from .nodes.diagnostician import diagnostician_node
 from .nodes.cartographer import cartographer_node
@@ -44,6 +44,7 @@ def stoppable(name, fn):
     """Check the STOP file before EVERY node. Outermost wrapper, so guarded()'s fallbacks cannot swallow the stop."""
     def wrapper(state):
         if name not in STOP_EXEMPT and os.path.exists(STOP_FILE):
+            LIVE.set(run_status="stopping", approval_request=None)
             raise RunStopped(name)
         return fn(state)
     return wrapper
@@ -105,35 +106,8 @@ def build(checkpointer=None):
 
 
 def _read_answer(path):
-    """Dashboard / Discord format (CONTRACT.md): {"approved": true|false}. The older {"answer": "yes"} still works."""
-    data = json.load(open(path))
-    if "approved" in data:
-        return "yes" if data["approved"] is True else "no"
-    return str(data.get("answer", "no"))
-
-
-def ask_human(req, timeout_s=180):
-    """Terminal y/n, or the dashboard writes runs/approval.json {"approved": true}. No answer = deny (safe default).
-    A STOP file ends the wait at once (answer = no) and the run halts at the next node."""
-    path = os.path.join(RUNS_DIR, "approval.json")
-    if os.path.exists(path):
-        os.remove(path)
-    print(f"\n>>> HUMAN APPROVAL NEEDED: {req['question']}\n    why: {req.get('reason')}\n    type y or n: ", end="", flush=True)
-    end = time.time() + timeout_s
-    while time.time() < end:
-        if os.path.exists(STOP_FILE):
-            print("(STOP requested, denied)")
-            return "no"
-        if os.path.exists(path):
-            try:
-                return _read_answer(path)
-            except (OSError, ValueError):
-                pass                                     # file still being written: try again
-        ready, _, _ = select.select([sys.stdin], [], [], 0.5)
-        if ready:
-            return sys.stdin.readline().strip()
-    print("(no answer, denied)")
-    return "no"
+    """Legacy file format check kept for the tests: {"approved": bool} or {"answer": "yes"} (see gate.py for the real gate)."""
+    return read_answer(path)
 
 
 def run(goal="", require_approval=False, offline=False, heal=True):
@@ -164,6 +138,7 @@ def run(goal="", require_approval=False, offline=False, heal=True):
     except RunStopped as e:
         LIVE.event("guard", f"STOP file detected before node '{e}': autopilot halted, restoring everything")
     finally:
+        LIVE.set(approval_request=None)                  # a pending question never outlives the run (STOP, Ctrl+C, crash)
         runtime.finish()
     values = app.get_state(conf).values
     if os.path.exists(STOP_FILE) and values.get("results") and not values.get("report"):
@@ -171,6 +146,7 @@ def run(goal="", require_approval=False, offline=False, heal=True):
             values = {**values, **reporter_node(values)}
         except Exception as e:  # noqa: BLE001
             LIVE.event("warn", f"[Reporter] could not write the partial report: {e}")
+    LIVE.set(report_path=(values.get("report") or {}).get("path_md"))   # dashboard: report is ready (None = no report)
     return values
 
 
