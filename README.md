@@ -1,5 +1,17 @@
 # ChaosPilot
 
+Repository: https://github.com/arthambansal/bosch_hack
+
+The isolated Docker voting app is exercised by controlled faults.
+Cartographer proposes source-cited weaknesses for experiments.
+Governor and approval gates constrain every destructive action.
+Observers measure errors, recovery, delivery, and data loss.
+Reporter turns evidence into scores, findings, and replayable scenarios.
+
+This project is licensed under Apache-2.0. The sandbox voting application is
+the Docker Samples Example Voting App, licensed under Apache-2.0; see
+`sandbox/app-src` and its upstream repository for its original notices.
+
 ChaosPilot tests resilience in an isolated Docker Example Voting App.
 Cartographer reads source and proposes testable weaknesses; Experimenter selects faults.
 Deterministic safety checks govern injection, recovery and FMEA scoring.
@@ -15,30 +27,36 @@ Reporter turns measured outcomes into impact, postmortems and replayable regress
 | Fix with proof and rollback | Deterministic RPN comparison and per-fix verdict | Mock-tested; cited teammate run artifacts pending |
 | Never again | Confirmed-failure export, engine replay, invariant checks, CI workflow | Offline tests pass; live replay and GitHub Actions not yet verified |
 
-## Quick start
+## Quick start from a fresh clone
 
-Python 3.10+ (3.11 recommended), Git, Docker with Compose, and an isolated sandbox are required.
-In a fresh directory:
+Install Git, Docker Desktop with Compose, and Python 3.10+ (3.11 recommended).
+Then run:
 
 ```powershell
 git clone https://github.com/arthambansal/bosch_hack.git
 cd bosch_hack
 git checkout tejas
+docker compose version
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 git clone https://github.com/dockersamples/example-voting-app sandbox/app-src
+$env:GROQ_API_KEY = "paste-your-key-here"
+```
+
+The key is read only from the environment; never put it in a file or commit it.
+An API key is optional for mock tests, replay, and the deterministic fallback.
+On POSIX, activate with `source .venv/bin/activate` and export it with
+`export GROQ_API_KEY="paste-your-key-here"`. The source checkout remains gitignored.
+
+Run the local checks before a push:
+
+```powershell
 python tests/test_contract_v5.py
 python tests/test_graph_mock.py
 python tests/test_regression.py
 python tests/test_report_v2.py
-python docs/test_tejas.py
 ```
-
-For the existing checkout, stay on `tejas`; do not clone again. On POSIX activate
-`.venv/bin/activate`. The source checkout remains gitignored. Keep API credentials
-in environment variables only, following `core/llm.py`; no API key is required for
-replay or mock tests. `--offline` uses cached AI responses or deterministic fallbacks.
 
 For an isolated live sandbox:
 
@@ -47,12 +65,8 @@ python chaospilot.py up
 python chaospilot.py map
 python chaospilot.py baseline --seconds 15
 python chaospilot.py dashboard
-```
-
-Open a second activated terminal for an approved run:
-
-```powershell
-python chaospilot.py autopilot --approve --no-heal --max 3
+python chaospilot.py autopilot --max 5 --approve
+python chaospilot.py mystery --trials 3
 ```
 
 Reports are written under `runs/auto_*/report.md` and `report.html`. Baseline comes

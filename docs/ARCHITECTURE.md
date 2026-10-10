@@ -1,70 +1,49 @@
-# ChaosPilot architecture — Day 2
+# ChaosPilot architecture
 
-Four reasoning agents investigate and propose: Cartographer, Experimenter,
-Diagnostician and Remediator. Deterministic Governor, Executor, Evaluator, Verifier
-and Reporter control safety and compute numbers. Runtime objects stay out of the
-JSON graph state; interfaces remain those in CONTRACT.md and DAY2_CONTRACT.md.
+ChaosPilot runs controlled resilience experiments against an isolated Docker
+Example Voting App. The pipeline is a guarded loop: propose, approve, inject,
+observe, explain, repair, verify, report, and replay.
 
-```mermaid
-flowchart TD
-  SRC[Confined read-only application source tools] --> C[Cartographer: open hypotheses with citations]
-  C --> E[Experimenter: ranked candidates and predictions]
-  E --> G[Governor: sandbox and blast-radius policy]
-  G --> H[Human approval where required]
-  H --> X[Executor: production Engine]
-  X --> APP[Voting App: vote to Redis to worker to Postgres]
-  X --> GUARD[Guard and STOP: restore active faults]
-  APP --> OBS[Observer and HTTP probes]
-  APP --> TRUTH[Truth Oracle: canary delivery]
-  OBS --> D[Diagnostician]
-  TRUTH --> D
-  MEM[Knowledge Store and failure signatures] <--> D
-  D --> M[Remediator: catalog fixes and proposed code diffs]
-  M --> V[Verifier: repeat experiments, compare RPN, rollback]
-  V --> R[Reporter: impact, scorecard, postmortems, FMEA]
-  R --> REG[Evidence-derived scenario JSON]
-  REG --> REPLAY[Replay: invariants and local status]
-  REPLAY --> X
-  J[Judge or random mystery choice] --> MX[Hidden fault under the same safety limits]
-  MX --> OBS
-  D --> REV[Mystery reveal and trial accuracy]
-  REV --> R
-  LIVE[Live state and audit events] <--> UI[Control Room v2 and notifications]
-  X --> LIVE
-  TRUTH --> LIVE
-  V --> LIVE
-  R --> LIVE
-```
+## Components and decisions
 
-## Tejas boundary
+| Component | Decision it makes |
+|---|---|
+| **Cartographer** | Reads bounded, read-only source files and proposes weaknesses with file/line/function citations. It keeps hypotheses open and uses the rule fallback when AI output is unavailable or invalid. |
+| **Experimenter** | Ranks hypotheses and chooses a fault, target, prediction, and expected invariants. |
+| **Governor** | Accepts or rejects the proposed experiment against configuration, sandbox labels, fault-count limits, stateful-service limits, and known invariants. |
+| **Human approval gate** | Requires explicit approval for destructive data-store or combined faults. A denial blocks injection. |
+| **Engine / Executor** | Applies the approved fault in the sandbox and records the timeline. |
+| **Guard and kill switch** | Watches error rate, latency, blast radius, duration, and STOP. A breach halts or restores the active fault. |
+| **Observer and Truth Oracle** | Probes HTTP behavior and compares canary votes accepted by the API with votes delivered to the result store. |
+| **Diagnostician** | Explains the observed failure from results, source context, and remembered signatures without inventing evidence. |
+| **Remediator** | Selects a catalogued fix or proposes a patch; suggestions are separate from applied code. |
+| **Verifier** | Repeats the experiment after a fix, compares measured RPN, and records pass/fail plus rollback status. |
+| **Reporter** | Computes FMEA, resilience score, impact, MTTD/MTTR when measurable, executive summary, fault tree, heatmap, and findings. |
+| **Regression replay** | Exports only confirmed measured failures and checks their invariants on later runs. |
 
-Source tools expose bounded list/read/grep without writes or command execution.
-Cartographer verifies source citations and keeps hypotheses open; fallback W1 cites
-GetIp, OpenRedisConnection and Main. It does not turn a valid quote into runtime proof.
+## How AI makes decisions
 
-Reporter retains deterministic FMEA and score, timing coverage, executive summary,
-fault tree and heatmap. Day 2 adds request-count-weighted impact, an explicit outage
-proxy when duration cannot be measured, prediction/mystery/fix counters, postmortems
-and before/after fix verdicts including rollback. HTML escapes evidence text. It
-exports confirmed failures with investigation quotes and publishes regression rows.
+When configured, the LLM suggests source-grounded hypotheses and helps rank or
+explain candidates. Every AI result is validated for schema, allowed tools, and
+real source citations. Invalid, uncited, or unavailable output falls back to
+deterministic rules. The LLM never computes FMEA or resilience numbers, bypasses
+Governor policy, operates outside the sandbox, or applies code by itself.
+Measurements, approvals, scores, and replay verdicts come from program logic.
 
-Regression validates scenarios before constructing Engine, enforces documented
-Governor limits using the supplied cfg and invokes the existing human gate for
-combined/data-store disruption. Engine retains actual sandbox label checks, Guard
-and restoration. Replay always checks measured recovery and per-scenario invariants;
-missing measurements fail. It stores status without changing a scenario's evidence.
-CI runs on an isolated base sandbox and currently supports unattended single
-non-stateful kill/pause scenarios only.
+## Safety controls
 
-## Ownership and validation
+- **Sandbox-only:** targets must be configured services carrying the expected
+  Compose project label; source tools are read-only and bounded.
+- **Governor:** allows at most two faults and at most one stateful data store,
+  rejects unknown targets/invariants, and enforces duration and blast-radius
+  limits before Engine construction.
+- **Guard:** monitors rolling error rate, p95 latency, service health, and data
+  delivery. Three consecutive threshold breaches trigger restoration.
+- **Kill switch and STOP:** a STOP file or dashboard action halts the run and
+  restores active faults, including on replay failure.
+- **Human gate:** combined and data-store disruptions require fresh, scoped
+  approval; stale, missing, or denied approvals cannot authorize injection.
 
-Artham owns runtime/state/contracts/CLI/engine; Pratham owns Truth Oracle/probes/fixes;
-Dipen owns diagnosis/memory; Samridhi owns dashboard/notifications. Tejas touches only
-his assigned report/regression/source/documentation files and new feature tests.
-The CLI syntax handoff is in docs/day2/TEJAS_HANDOFF.md; no shared contract was changed.
-
-The contract, graph, regression and report checks use mocks. Live evidence preserved
-locally is the earlier single approved Redis-kill trial, not a Day 2 golden run.
-Truth Oracle, mystery accuracy, verified live fixes and CI execution require their
-respective real artifacts. The diagram describes integrated responsibilities, not
-proof that every subsystem has been live-validated on this laptop.
+Graph state contains interfaces and evidence references only. Runtime objects and
+credentials stay outside serialized state, and API keys remain environment
+variables. Mock tests validate contracts; live claims require preserved artifacts.
