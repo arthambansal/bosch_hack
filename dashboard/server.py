@@ -1,11 +1,12 @@
-"""Local dashboard state/control bridge. Approval acceptance fails closed until
-Artham supplies a shared cross-process gate submission/closure primitive.
-No orchestrator module is imported: its LIVE singleton would be a different process.
+"""Local dashboard state/control bridge. Approvals are recorded through the orchestrator's shared gate lock
+(agentic.gate.submit_decision: validate + write under runs/gate.lock). Only that one pure function is imported,
+never the orchestrator's LIVE singleton (a different process).
 """
 import ipaddress
 import json
 import math
 import os
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlsplit
@@ -17,6 +18,9 @@ APPROVAL = os.path.join(ROOT, "runs", "approval.json")
 STOP = os.path.join(ROOT, "STOP")
 MAX_BODY = 4096
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+sys.path.insert(0, ROOT)
+from agentic.gate import submit_decision  # noqa: E402  (pure file+lock logic, safe to import in this process)
 
 
 def load_state():
@@ -125,9 +129,10 @@ class Handler(BaseHTTPRequestHandler):
             if error:
                 self.json_reply(409, {"error": error})
                 return
-            # No dashboard-only lock can coordinate gate.py's consumption,
-            # timeout, terminal decision, and close operations. DO NOT WRITE.
-            self.json_reply(503, {"error": "gate_sync_unavailable"})
+            # Validate again and write under the SAME lock the orchestrator uses to open, consume and close the gate.
+            status, body = submit_decision(payload["gate_id"], payload["approved"], by="dashboard", live_file=STATE,
+                                           approval_file=APPROVAL, lock_dir=os.path.join(os.path.dirname(APPROVAL), "gate.lock"))
+            self.json_reply(status, body)
             return
         if payload:
             self.json_reply(400, {"error": "empty_stop_body_required"})

@@ -10,8 +10,7 @@ verifier decide whether to keep it. Also let it draft a code-level patch suggest
 import time
 
 from core.common import LIVE
-from core.heal import advise_fixes, apply_fixes
-
+from core.heal import advise_fixes, apply_fixes, draft_ai_remediation
 from ..runtime import cfg
 
 
@@ -22,7 +21,27 @@ def remediator_node(state):
     fixes, extras, source = advise_fixes(state["fmea"], state["results"], state["graph"],
                                          offline=state.get("offline", False))
     applied = state.get("fixes", [])
-    new = [f for f in fixes if f["id"] not in {a["id"] for a in applied}]
+
+    generated_fix, code_patch = draft_ai_remediation(
+        state["fmea"],
+        state["results"],
+        state["graph"],
+        applied,
+        offline=state.get("offline", False),
+    )
+
+    if code_patch:
+        LIVE.event(
+            "ai",
+            "[Remediator] code patch suggestion (NOT applied): "
+            + str(code_patch)[:700],
+        )
+
+    if generated_fix:
+        fixes.append(generated_fix)
+
+    banned = set(state.get("rolled_back", []))     # the Verifier proved these made things worse
+    new = [f for f in fixes if f["id"] not in {a["id"] for a in applied} | banned]
     for e in extras:
         LIVE.event("ai", f"[Remediator] manual recommendation: {e.get('problem')} -> {e.get('recommendation')}")
     if not new:

@@ -3,7 +3,6 @@ import { obj, arr, num, localTime } from '../data.js';
 import { Icon } from './ui.jsx';
 import { useControls } from './ControlProvider.jsx';
 import ControlFeedback from './ControlFeedback.jsx';
-import { APPROVAL_BLOCKER } from '../api/controlApi.js';
 
 export default function ApprovalPanel({ request, phase, connected }) {
   const req = obj(request), pending = Object.keys(req).length > 0;
@@ -20,7 +19,6 @@ export default function ApprovalPanel({ request, phase, connected }) {
       {(!connected || phase !== 'running') && <small>Current request status is unconfirmed.</small>}</div> : <p className="approval-empty">When an experiment needs your decision, its request will appear here.</p>}
     <div className="approval-actions" aria-busy={loading}><button disabled={!controls?.approvalAvailable} onClick={controls?.approve}><Icon name="check" size={16} />{loading && result.action === 'approve' ? 'Sending…' : 'Approve'}</button><button disabled={!controls?.approvalAvailable} onClick={controls?.deny}>{loading && result.action === 'deny' ? 'Sending…' : 'Deny'}</button></div>
     <ControlFeedback result={result} />
-    <p className="unavailable-note"><Icon name="lock" size={13} />{APPROVAL_BLOCKER}</p>
     {validResult && <div className="backend-approval-result" role="status"><strong>Backend decision: {completed.answer}</strong><small>Gate {completed.gate_id} · {String(completed.source || 'Source unavailable')} · {localTime(completed.at)}</small></div>}
   </section>;
 }

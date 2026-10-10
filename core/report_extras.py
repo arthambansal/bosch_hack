@@ -122,3 +122,24 @@ def write_html(path, markdown, results, services):
             f.write('<div style="flex:1;border:1px solid #94a3b8;padding:18px">' + html.escape(branch) + '</div>')
         f.write('</div><p>This is a qualitative OR tree. Recorded aggregate loss does not establish any individual branch or probability.</p>')
         f.write(heatmap_html(results, services))
+
+
+# ---------------------------------------------------------------- Day 2 interfaces (Tejas) — DAY2_CONTRACT.md 4.5, 5
+# STUBS with safe defaults. Replace the bodies, keep the signatures.
+def impact_of(result):
+    """Impact of one experiment in human terms (shape 4.5)."""
+    d = (result or {}).get("delivery") or {}
+    return {"experiment": (result or {}).get("id"), "votes_lost": d.get("lost"), "votes_accepted": d.get("sent"),
+            "outage_s": None, "failed_requests_pct": None, "summary": "Impact not computed yet"}
+
+
+def scorecard(results, verification, trials):
+    """AI scorecard for the report."""
+    return {"predictions": {"right": None, "total": None}, "mystery": {"trials": len(trials or []), "top1": None,
+            "top3": None, "target": None}, "fixes": {"verified": None, "rolled_back": None, "not_improved": None},
+            "memory_hits": None}
+
+
+def postmortem(result, investigation, impact):
+    """Markdown postmortem section for one finding."""
+    return ""

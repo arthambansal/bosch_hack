@@ -12,7 +12,9 @@ state confidence honestly and say what evidence would change the diagnosis.
 """
 from core.agentkit import ReActAgent
 from core.common import LIVE
-from core.knowledge import load_observation
+from core.knowledge import DEFAULT_PATH, KnowledgeStore, load_observation
+from core.signatures import extract_features
+import sqlite3
 from core.tools import make_tools
 
 from ..runtime import cfg
@@ -63,6 +65,47 @@ def detect_fault(res, configuration=None, baseline=None, observation=None):
              'suggested_fix': ''}, detected)
 
 
+def matched_known_causes(cfg, graph, res):
+    """Retrieve at most three confirmed cases; similarities are not probabilities.
+
+    Missing measurements stay unknown. Existing memory is optional and no
+    synthetic or unconfirmed cases are added to it by this lookup.
+    """
+    observation = load_observation(res.get("id")) or {}
+    # Engine measurements take precedence over optional Observer snapshots.
+    measured = dict(observation)
+    rates = dict(observation.get("probe_error_rate") or {})
+    rates.update({name: data["error_rate"] for name, data in (res.get("probes") or {}).items()
+                  if data.get("error_rate") is not None})
+    measured["probe_error_rate"] = rates
+    if "recovery_s" in res:
+        measured["mttr_s"] = res["recovery_s"]
+    features = extract_features(measured)
+    services = (graph or {}).get("services") or cfg.get("services") or {}
+    for service in res.get("stuck_services") or []:
+        if (services.get(service) or {}).get("role") != "consumer":
+            continue
+        code = ((res.get("stuck_details") or {}).get(service) or {}).get("exit_code")
+        if str(code).isdigit() and int(code) != 0:
+            features["consumer_exit"] = 1
+    logs = " ".join(str(line) for detail in (res.get("stuck_details") or {}).values()
+                    for line in detail.get("last_logs") or []).lower()
+    if any(marker in logs for marker in ("name or service not known", "enotfound", "getaddrinfo", "dns lookup")):
+        features["new_dns_error"] = 1
+    if not features or not DEFAULT_PATH.exists():
+        return []
+    try:
+        with KnowledgeStore() as store:
+            matches = store.similar_signatures(features, limit=3)
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        LIVE.event("warn", "[Diagnostician] signature memory unavailable; continuing with measured evidence")
+        return []
+    return [{"signature": m["signature"]["id"], "from": m["signature"]["from"],
+             "similarity": round(m["similarity"], 3), "compared_features": m["compared_features"],
+             "known_cause": m["signature"]["root_cause"][:300]}
+            for m in matches if m["similarity"] >= 0.6]
+
+
 def investigate(cfg, graph, res, offline=False, symptoms=None):
     facts = {k: res.get(k) for k in ("name", "status", "abort_reason", "recovery_s", "stuck_services",
                                      "stuck_details", "delivery", "prediction", "prediction_check")}
@@ -76,6 +119,12 @@ def investigate(cfg, graph, res, offline=False, symptoms=None):
     facts["error_rate_by_probe"] = {k: v.get("error_rate") for k, v in (res.get("probes") or {}).items()}
     if symptoms:
         facts["detected_symptoms"] = symptoms.get("evidence")      # Phase 1 evidence (deterministic)
+    matches = matched_known_causes(cfg, graph, res)
+    facts["matched_known_causes"] = matches
+    facts["signature_note"] = ("These are confirmed PAST cases, not proof of this incident's cause. "
+                               "Similarity is not confidence; few compared features mean limited support. "
+                               "No matches means no known case >= 0.6, not that the system is healthy. "
+                               "Confirm or reject a retrieved cause using current logs and state.")
     agent = ReActAgent(
         "Diagnostician",
         "an SRE doing root-cause analysis right after a chaos experiment. Use read-only tools (logs, container "
@@ -84,7 +133,10 @@ def investigate(cfg, graph, res, offline=False, symptoms=None):
         starters=[("list_containers", {})] + [("container_logs", {"service": n, "lines": 20}) for n in
                                               (res.get("stuck_services") or [st["target"] for st in res.get("steps", [])])[:3]])
     final, trace = agent.run(f"Explain the root cause of what happened in experiment {res.get('id')}.", facts)
-    return {"final": final, "tool_calls": len(trace), "trace": trace}
+    known_evidence = [f"Past signature {m['signature']} (from {m['from']}), similarity={m['similarity']}, "
+                      f"compared={','.join(m['compared_features'])}: {m['known_cause']} "
+                      "[historical cause; not confirmed for this incident]" for m in matches]
+    return {"final": final, "tool_calls": len(trace), "trace": trace, "known_evidence": known_evidence}
 
 
 def rule_based(res, graph=None):
@@ -120,10 +172,30 @@ def diagnostician_node(state):
     by = "agent" if final else "rules"
     final = dict(final or rule_based(res))
     # Phase 1 evidence always travels with the diagnosis, then whatever the agent or rules cited
-    final["evidence"] = list(dict.fromkeys(list(symptoms.get("evidence") or []) + [str(e) for e in final.get("evidence") or []]))
+    final["evidence"] = list(dict.fromkeys(list(symptoms.get("evidence") or [])
+                            + [str(e) for e in final.get("evidence") or []]
+                            + (out.get("known_evidence") or [])))
     final["affected_services"] = sorted(set(final.get("affected_services") or []) | set(symptoms.get("affected_services") or []))
     final["fault_detected"] = detected
     final["by"] = by
     LIVE.event("ai", f"[Diagnostician] {res['id']} root cause: {final.get('root_cause')}")
     inv[res["id"]] = final
     return {"investigations": inv}
+
+
+# ---------------------------------------------------------------- Day 2 interfaces (Dipen) — DAY2_CONTRACT.md 4.2, 4.3, 5
+# STUBS. Replace the bodies, keep the signatures.
+def diagnose_blind(res, cfg, graph, offline=False):
+    """Name the hidden fault and target from evidence only. `res` is redacted (no name/steps/faults_injected/...)."""
+    import time as _t
+    t0 = _t.time()
+    stuck = list(res.get("stuck_services") or [])
+    target = stuck[0] if stuck else "redis"
+    guess = {"fault": "kill", "target": target, "confidence": 0.2}
+    return {**guess, "top3": [guess], "root_cause": "stub guess: blind diagnosis not implemented yet",
+            "evidence": [], "memory_hit": False, "seconds": round(_t.time() - t0, 3)}
+
+
+def remember_confirmed(res, fault, root_cause):
+    """Save a confirmed failure signature (called after a mystery reveal or a verified fix). STUB: does nothing."""
+    return None

@@ -27,7 +27,8 @@ Rules:
   service crashed (stuck_services) and a similar fault is coming, predict recovers=false; if a fault was tolerated,
   predict no effect. Do not repeat an optimistic prediction that reality already contradicted.
 - steps[].delay_s is the wait BEFORE a step starts, not the size of the fault.
-- You may finish only after at least 3 experiments have run.
+- You may finish only after at least 3 experiments have run AND at least 3 different fault types (kill, pause,
+  partition, latency, spike) have been used; until then only candidates with a NEW fault type are offered.
 Reply with JSON only."""
 
 USER = """Dependency map:
@@ -53,6 +54,13 @@ Reply:
   "prediction": {{"probes_affected": ["vote_write"], "data_loss": false, "recovers": true}}}}"""
 
 
+TYPES_REQUIRED = 3          # brief: "at least 3 failure types". Enforced in code, the AI cannot talk its way out of it.
+
+
+def types_run(results):
+    return {s["type"] for r in results for s in (r.get("steps") or [])}
+
+
 class Agent:
     """Callable used by Engine.run_agent: agent(results_so_far) -> next experiment dict, or None to stop."""
 
@@ -72,12 +80,30 @@ class Agent:
                  "error_rate": {k: v["error_rate"] for k, v in (r.get("probes") or {}).items()},
                  "prediction_check": r.get("prediction_check")} for r in results]
 
-    def _fallback(self):
+    def _needs_new_type(self, results):
+        return len(types_run(results)) < TYPES_REQUIRED
+
+    def _publish_ranking(self, results, chosen_id, reason):
+        """Show the full risk-ranked list on the dashboard (brief: AI ranks and selects experiments with a reason)."""
+        tried = {f"{s['type']}:{s['target']}" for r in results for s in (r.get("steps") or [])}
+        covered = sorted(types_run(results))
+        LIVE.set(plan_ranking={
+            "turn": self.n, "chosen": chosen_id, "reason": reason, "types_covered": covered,
+            "types_required": TYPES_REQUIRED,
+            "candidates": [{"id": c["id"], "type": c["type"], "target": c["target"], "risk_score": c["risk_score"],
+                            "predicted_probes": c["predicted_probes"], "tried": c["id"] in tried} for c in self.cands[:10]]})
+
+    def _fallback(self, results=()):
+        need_new = self._needs_new_type(results)
+        seen_types = types_run(results)
         for e in self.fallback:
             sig = tuple(f"{s['type']}:{s['target']}" for s in e["steps"])
+            if need_new and all(s["type"] in seen_types for s in e["steps"]):
+                continue                                  # coverage rule: only experiments that add a new fault type
             if sig not in self.used:
                 self.used.add(sig)
                 LIVE.event("ai", f"AGENT step {self.n}: (rule-based fallback) {e['name']}")
+                self._publish_ranking(results, "+".join(sig), e.get("reason", ""))
                 return dict(e, id=f"E{self.n}", prediction=None)
         return None
 
@@ -85,25 +111,32 @@ class Agent:
         self.n += 1
         compact = {n: {k: s[k] for k in ("role", "stateful", "depends_on", "used_by")}
                    for n, s in self.graph["services"].items()}
+        need_new, seen_types = self._needs_new_type(results), types_run(results)
+        shown = [c for c in self.cands if c["type"] not in seen_types] if need_new else self.cands
+        self.allowed = {c["id"] for c in shown}
         user = USER.format(
             graph=json.dumps({"services": compact, "data_flows": self.graph["data_flows"]}),
             baseline=json.dumps((self.baseline or {}).get("probes", {})),
             cands="\n".join(f"- {c['id']} (risk {c['risk_score']}, breaks: {c['predicted_probes'] or 'none'})"
-                            for c in self.cands),
+                            for c in shown),
             history=json.dumps(self._history(results)) if results else "nothing yet, this is the first experiment",
             extra=json.dumps(self.extra, default=str)[:3500])
         data, source = ask_json(f"agent_step{self.n}", SYSTEM, user, offline=self.offline, max_tokens=900)
         if not data:
             return self._fallback()
         if data.get("action") == "finish":
-            if self.n > 3:
+            if self.n > 3 and not need_new:
                 LIVE.event("ai", f"AGENT decides to finish: {str(data.get('reason', ''))[:200]}")
                 return None
-            return self._fallback()                      # not allowed to stop before 3 experiments
+            return self._fallback(results)               # not allowed to stop before 3 experiments / 3 fault types
         steps = [s for s in data.get("steps", [])[:2] if s.get("candidate") in self.by_id]
         sig = tuple(s["candidate"] for s in steps)
-        if not steps or sig in self.used:
-            return self._fallback()                      # invalid or repeated -> ignored, never executed
+        adds_type = any(self.by_id[s["candidate"]]["type"] not in seen_types for s in steps)
+        if not steps or sig in self.used or (need_new and not adds_type):
+            if need_new and steps and not adds_type:
+                LIVE.event("warn", f"[coverage] {'+'.join(sig)} adds no new fault type "
+                                   f"({len(seen_types)}/{TYPES_REQUIRED} covered): using a rule-based pick")
+            return self._fallback(results)               # invalid, repeated or breaks coverage -> never executed
         self.used.add(sig)
         delays = [max(0, min(15, int(s.get("delay_s", 0) or 0))) for s in steps]
         exp = _experiment(self.n, [self.by_id[s["candidate"]] for s in steps], delays,
@@ -112,6 +145,7 @@ class Agent:
         exp["id"] = f"E{self.n}"
         pred = data.get("prediction")
         exp["prediction"] = pred if isinstance(pred, dict) else None
+        self._publish_ranking(results, "+".join(sig), exp["reason"])
         LIVE.event("ai", f"AGENT step {self.n} ({source}): {exp['name']}")
         LIVE.event("ai", f"  because: {exp['reason']}")
         if exp["prediction"]:
