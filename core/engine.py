@@ -11,8 +11,8 @@ import time
 from .common import BASELINE_FILE, LATEST_FILE, LIVE, PLAN_FILE, RUNS_DIR, STOP_FILE, docker, load_json, save_json
 from .faults import Fault, SafetyError, panic
 from .fmea import build_fmea
-from .probes import Prober, settled_count, summarize
-
+from .probes import Prober, backlog, settled_count, summarize
+from .observer import summary as observer_summary
 
 class Guard:
     """Trips when thresholds are breached for `breach_ticks` consecutive checks.
@@ -121,6 +121,7 @@ class Engine:
         guard = Guard(cfg, self.prober, exp["predicted_probes"])
         pending = sorted(zip(exp["steps"], faults), key=lambda x: x[0].get("delay_s", 0))
         t_inject, aborted, guard_log = time.time(), None, []
+        queue_start = backlog(cfg)
         while True:
             elapsed = time.time() - t_inject
             while pending and pending[0][0].get("delay_s", 0) <= elapsed:
@@ -207,6 +208,30 @@ class Engine:
                      "data_loss": None if lost is None else (lost > 0) == bool(pred.get("data_loss", False))}
             LIVE.event("ai", "PREDICTION " + ("CORRECT" if all(v is not False for v in check.values()) else "WRONG")
                        + f" {check}")
+        observation_end = time.time()
+        queue_end = backlog(cfg)
+
+        first_guard_time = (
+                guard_log[0]["t"]
+                if guard_log
+                else None
+            )
+        observation = observer_summary(
+            t_start=t_inject,
+            t_end=t_restore,
+            cfg={**cfg, "experiment": exp["id"]},
+            prober=self.prober,
+            queue_start=queue_start,
+            queue_end=queue_end,
+            accepted_count=sent,
+            delivered_count=delivered,
+            kill_switch=aborted if aborted and (
+                "KILL SWITCH" in aborted
+                or "kill switch" in aborted.lower()
+            ) else None,
+            stuck_services=stuck,
+            mttd_s=first_guard_time,
+            mttr_s=recovery_s)
         return {"id": exp["id"], "name": exp["name"], "steps": exp["steps"], "reason": exp["reason"],
                 "hypothesis": exp.get("hypothesis"), "predicted_probes": exp["predicted_probes"],
                 "status": "aborted" if aborted else "completed", "abort_reason": aborted,
@@ -214,7 +239,7 @@ class Engine:
                 "recovery_s": recovery_s, "guard_log": guard_log[-10:],
                 "delivery": {"sent": sent, "delivered": delivered, "lost": lost},
                 "prediction": pred, "prediction_check": check,
-                "stuck_services": stuck, "stuck_details": stuck_details}
+                "stuck_services": stuck, "stuck_details": stuck_details,"observation": observation}
 
     def _stopped(self):
         """Services whose container is NOT running right now (crashed, killed or exited)."""

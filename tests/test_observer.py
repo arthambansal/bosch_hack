@@ -1,3 +1,6 @@
+from unittest.mock import patch
+from core.observer import summary
+from core.observer import collect_log_templates
 
 from core.observer import (
     normalize_log,
@@ -78,9 +81,66 @@ def test_container_exit_anomaly():
         for item in anomalies
     )
 
+def test_summary_schema():
+    cfg = {
+        "project": "chaos",
+        "experiment": "TEST-1",
+        "services": {},
+        "backlog_check": {"container": "chaos-redis", "cmd": ["redis-cli", "LLEN", "votes"]},
+    }
+
+    with patch("core.observer.docker_events", return_value=[]), \
+         patch("core.probes.backlog", return_value=3), \
+         patch("core.observer.collect_log_templates", return_value={}):
+        result = summary(
+            t_start=100,
+            t_end=110,
+            cfg=cfg,
+            queue_start=1,
+            queue_end=3,
+            accepted_count=10,
+            delivered_count=8,
+            kill_switch="test stop",
+            stuck_services=["worker"],
+            mttd_s=2.0,
+            mttr_s=4.0,
+        )
+
+    assert result["experiment"] == "TEST-1"
+    assert result["delivery"]["accepted"] == 10
+    assert result["delivery"]["delivered"] == 8
+    assert result["queue_depth"] == {"start": 1, "end": 3}
+    assert result["kill_switch"] == "test stop"
+    assert result["stuck_services"] == ["worker"]
+    assert result["mttd_s"] == 2.0
+    assert result["mttr_s"] == 4.0
+
+
+def test_log_collection_window():
+    cfg = {
+        "services": {
+            "worker": {"container": "chaos-worker"},
+        }
+    }
+
+    with patch("core.observer.subprocess.run") as mock_run:
+        mock_run.return_value.stdout = "worker processed vote 123"
+        mock_run.return_value.stderr = ""
+        mock_run.return_value.returncode = 0
+
+        collect_log_templates(cfg, 100, t_end=110)
+
+    args = mock_run.call_args.args[0]
+    assert "--since" in args
+    assert args[args.index("--since") + 1] == "100"
+    assert "--until" in args
+    assert args[args.index("--until") + 1] == "110"
+
 
 if __name__ == "__main__":
     tests = [
+        test_summary_schema,
+        test_log_collection_window,
         test_normalize_log,
         test_mine_log_templates,
         test_probe_error_anomaly,
