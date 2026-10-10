@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.heal import select_fixes
+from core.heal import advise_fixes, select_fixes
 
 
 GRAPH = {
@@ -68,3 +68,55 @@ redis_ids = {fix["id"] for fix in redis_loss}
 assert "redis-durable" in redis_ids, redis_ids
 
 print("ALL HEAL SELECTION CHECKS PASSED")
+
+
+# AI recommendations must not remove evidence-backed recovery fixes.
+import core.heal as heal
+
+_original_ask_json = heal.ask_json
+
+try:
+    heal.ask_json = lambda *args, **kwargs: (
+        {
+            "fixes": [
+                {
+                    "id": "restart-policy",
+                    "for": ["E3"],
+                    "why": "Generic restart recommendation",
+                }
+            ],
+            "extra_recommendations": [],
+        },
+        "test",
+    )
+
+    fixes, _, source = advise_fixes(
+        [
+            {
+                "id": "E3",
+                "failure_mode": "kill db",
+                "effect": "worker and result crashed",
+                "S": 9,
+                "O": 7,
+                "D": 10,
+                "rpn": 630,
+                "action_priority": "High",
+            }
+        ],
+        [
+            {
+                "id": "E3",
+                "steps": [{"type": "kill", "target": "db"}],
+                "stuck_services": ["worker", "result"],
+                "delivery": {"lost": 0},
+            }
+        ],
+        GRAPH,
+    )
+
+    fix_ids = {fix["id"] for fix in fixes}
+    assert "postgres-recovery" in fix_ids, fix_ids
+    assert "restart-policy" in fix_ids, fix_ids
+    print("PASS AI cannot remove evidence-backed recovery fixes")
+finally:
+    heal.ask_json = _original_ask_json

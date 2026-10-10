@@ -136,31 +136,89 @@ Reply:
   "extra_recommendations": [{{"problem": "...", "recommendation": "..."}}]}}"""
 
 
-def advise_fixes(rows, results, graph, offline=False):
-    """AI picks + explains catalog fixes; falls back to rules. Returns (fixes, extra_recommendations, source).
 
-    The AI can only choose catalog ids (validated here). It never writes or runs code.
-    Extra recommendations are shown to humans only and are never applied automatically."""
+def advise_fixes(rows, results, graph, offline=False):
+    """Keep evidence-backed fixes; let AI add explanations and valid extra fixes."""
     rule_based = select_fixes(rows, results, graph)
+
     by_id = {r["id"]: r for r in results}
-    compact = [{**{k: r[k] for k in ("id", "failure_mode", "effect", "S", "O", "D", "rpn", "action_priority")},
-                "cascade_crashed": by_id.get(r["id"], {}).get("stuck_services")} for r in rows]
-    user = FIX_USER.format(rows=json.dumps(compact, indent=1),
-                           catalog="\n".join(f"- {k}: {v['why']}" for k, v in CATALOG.items()))
-    data, source = ask_json("fixes", FIX_SYSTEM, user, offline=offline, max_tokens=900)
+    compact = [
+        {
+            **{
+                k: r[k]
+                for k in (
+                    "id", "failure_mode", "effect",
+                    "S", "O", "D", "rpn", "action_priority"
+                )
+            },
+            "cascade_crashed": by_id.get(r["id"], {}).get("stuck_services"),
+        }
+        for r in rows
+    ]
+
+    user = FIX_USER.format(
+        rows=json.dumps(compact, indent=1),
+        catalog="\n".join(
+            f"- {k}: {v['why']}" for k, v in CATALOG.items()
+        ),
+    )
+
+    data, source = ask_json(
+        "fixes", FIX_SYSTEM, user, offline=offline, max_tokens=900
+    )
+
+    # The evidence-based rules are authoritative.
+    # An AI failure must never remove a rule-selected fix.
+    chosen_by_id = {
+        fix["id"]: dict(fix) for fix in rule_based
+    }
+
     if not data:
-        return rule_based, [], "rules"
-    actionable = {r["id"] for r in rows if r["action_priority"] != "Low"}
-    chosen = []
+        return list(chosen_by_id.values()), [], "rules"
+
+    actionable = {
+        r["id"] for r in rows
+        if r["action_priority"] != "Low"
+    }
+
     for f in data.get("fixes", []):
-        if f.get("id") in CATALOG:
-            targets = [i for i in f.get("for", []) if i in actionable] or sorted(actionable)
-            chosen.append({"id": f["id"], **CATALOG[f["id"]], "why": str(f.get("why") or CATALOG[f["id"]]["why"])[:300],
-                           "rows": targets})
-    if not chosen:
-        return rule_based, [], "rules"
-    extras = [e for e in data.get("extra_recommendations", []) if isinstance(e, dict)][:5]
-    return chosen, extras, source
+        if not isinstance(f, dict):
+            continue
+
+        fix_id = f.get("id")
+        if fix_id not in CATALOG:
+            continue
+
+        targets = [
+            i for i in f.get("for", [])
+            if isinstance(i, str) and i in actionable
+        ]
+
+        if not targets:
+            continue
+
+        if fix_id in chosen_by_id:
+            # Preserve rule-based targeting; use the AI only for explanation.
+            existing = chosen_by_id[fix_id]
+            existing["why"] = str(
+                f.get("why") or existing["why"]
+            )[:300]
+            continue
+
+        chosen_by_id[fix_id] = {
+            "id": fix_id,
+            **CATALOG[fix_id],
+            "why": str(f.get("why") or CATALOG[fix_id]["why"])[:300],
+            "rows": targets,
+        }
+
+    extras = [
+        e for e in data.get("extra_recommendations", [])
+        if isinstance(e, dict)
+    ][:5]
+
+    return list(chosen_by_id.values()), extras, source
+
 
 # ---------------------------------------------------------------------------
 # AI-GENERATED REMEDIATION: strict whitelist, validated before Docker sees it.

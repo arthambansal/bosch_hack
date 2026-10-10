@@ -1,0 +1,622 @@
+[
+  {
+    "id": "E1",
+    "name": "Redis network partition (DNS failure)",
+    "steps": [
+      {
+        "type": "partition",
+        "target": "redis",
+        "delay_s": 0
+      }
+    ],
+    "reason": "Cartographer hypothesizes that a DNS resolution failure when opening a Redis connection causes the worker to exit, stopping vote processing. Testing a partition on redis directly probes this failure mode before testing simple crashes.",
+    "hypothesis": "If Redis becomes unreachable (e.g., DNS lookup fails), the worker will not retry, exit with code 1, and vote_write requests will fail without automatic recovery.",
+    "predicted_probes": [
+      "vote_write"
+    ],
+    "status": "aborted",
+    "abort_reason": "KILL SWITCH: vote_write error rate 75% >= 50%",
+    "fault_window_s": 1.6,
+    "probes": {
+      "vote_write": {
+        "n": 4,
+        "ok": 1,
+        "error_rate": 0.75,
+        "p50_ms": 14.6,
+        "p95_ms": 17.7,
+        "time_to_first_error_s": 0.5
+      },
+      "result_page": {
+        "n": 4,
+        "ok": 4,
+        "error_rate": 0.0,
+        "p50_ms": 5.2,
+        "p95_ms": 5.6,
+        "time_to_first_error_s": null
+      }
+    },
+    "recovery_s": 0.4,
+    "guard_log": [
+      {
+        "t": 0.6,
+        "reasons": [
+          "vote_write error rate 50% >= 50%"
+        ]
+      },
+      {
+        "t": 1.1,
+        "reasons": [
+          "vote_write error rate 67% >= 50%"
+        ]
+      },
+      {
+        "t": 1.6,
+        "reasons": [
+          "vote_write error rate 75% >= 50%"
+        ]
+      }
+    ],
+    "delivery": {
+      "sent": 22,
+      "delivered": 22,
+      "lost": 0
+    },
+    "faults_injected": [
+      "PARTITION -> redis"
+    ],
+    "prediction": {
+      "probes_affected": [
+        "vote_write"
+      ],
+      "data_loss": false,
+      "recovers": false
+    },
+    "prediction_check": {
+      "probes": true,
+      "recovers": false,
+      "data_loss": true
+    },
+    "stuck_services": [],
+    "stuck_details": {},
+    "observation": {
+      "experiment": "E1",
+      "t_start": 1791631887.806375,
+      "t_end": 1791631889.451326,
+      "mttd_s": 0.6,
+      "mttr_s": 0.4,
+      "probe_error_rate": {
+        "vote_write": 0.75,
+        "result_page": 0.0
+      },
+      "delivery": {
+        "accepted": 22,
+        "delivered": 22,
+        "canary_lag_s": null
+      },
+      "queue_depth": {
+        "start": 1,
+        "end": 0
+      },
+      "events": [],
+      "new_log_templates": {
+        "vote": [
+          "<IP> - - [<NUM>/Oct/<NUM>:<NUM>:<NUM>:<NUM> +<NUM>] \"POST / HTTP/<NUM>\" <NUM> <NUM> \"-\" \"python-requests/<NUM>.<NUM>\"",
+          "During handling of the above exception, another exception occurred:",
+          "File \"/usr/local/app/app.py\", line <NUM>, in hello",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/flask/app.py\", line <NUM>, in dispatch_request",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/flask/app.py\", line <NUM>, in full_dispatch_request",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/flask/app.py\", line <NUM>, in wsgi_app",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/client.py\", line <NUM>, in _execute_command",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/client.py\", line <NUM>, in execute_command",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/commands/core.py\", line <NUM>, in rpush",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in <lambda>",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in _connect",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in connect",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in get_connection",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/retry.py\", line <NUM>, in call_with_retry",
+          "File \"/usr/local/lib/python3.<NUM>/socket.py\", line <NUM>, in getaddrinfo",
+          "Traceback (most recent call last):",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [ERROR] Exception on / [POST]",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for a",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for b",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] ERROR in app: Exception on / [POST]",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for a",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for b",
+          "^^^^",
+          "^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "conn = self.connection or pool.get_connection(command_name, **options)",
+          "connection.connect()",
+          "for res in _socket.getaddrinfo(host, port, family, type, proto, flags):",
+          "for res in socket.getaddrinfo(",
+          "lambda: self._connect(), lambda error: self.disconnect(error)",
+          "raise ConnectionError(self._error_message(e))",
+          "redis.exceptions.ConnectionError: Error -<NUM> connecting to redis:<NUM>. Name or service not known.",
+          "redis.rpush('votes', data)",
+          "response = self.full_dispatch_request()",
+          "return do()",
+          "return self._execute_command(*args, **options)",
+          "return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args) # type: ignore[no-any-return]",
+          "return self.execute_command(\"RPUSH\", name, *values)",
+          "rv = self.dispatch_request()",
+          "rv = self.handle_user_exception(e)",
+          "sock = self.retry.call_with_retry(",
+          "socket.gaierror: [Errno -<NUM>] Name or service not known"
+        ],
+        "worker": [
+          "Processing vote for 'b' by '5f372be4244af53'"
+        ]
+      },
+      "anomalies": [
+        {
+          "type": "probe_error_rate",
+          "service": "vote_write",
+          "value": 0.75,
+          "reason": "Probe error rate exceeds 5%"
+        }
+      ],
+      "kill_switch": "KILL SWITCH: vote_write error rate 75% >= 50%",
+      "stuck_services": []
+    }
+  },
+  {
+    "id": "E2",
+    "name": "Pause Redis to test worker resilience",
+    "steps": [
+      {
+        "type": "pause",
+        "target": "redis",
+        "delay_s": 0
+      }
+    ],
+    "reason": "The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.",
+    "hypothesis": "If the system has proper retry/back\u2011off, a temporary pause of Redis will not crash the worker and vote_write will recover after the pause ends.",
+    "predicted_probes": [
+      "vote_write"
+    ],
+    "status": "aborted",
+    "abort_reason": "KILL SWITCH: vote_write error rate 100% >= 50%",
+    "fault_window_s": 6.7,
+    "probes": {
+      "vote_write": {
+        "n": 3,
+        "ok": 1,
+        "error_rate": 0.667,
+        "p50_ms": 2504.0,
+        "p95_ms": 2505.7,
+        "time_to_first_error_s": 0.5
+      },
+      "result_page": {
+        "n": 14,
+        "ok": 14,
+        "error_rate": 0.0,
+        "p50_ms": 6.6,
+        "p95_ms": 7.5,
+        "time_to_first_error_s": null
+      }
+    },
+    "recovery_s": 0.4,
+    "guard_log": [
+      {
+        "t": 5.6,
+        "reasons": [
+          "vote_write error rate 100% >= 50%"
+        ]
+      },
+      {
+        "t": 6.1,
+        "reasons": [
+          "vote_write error rate 100% >= 50%"
+        ]
+      },
+      {
+        "t": 6.7,
+        "reasons": [
+          "vote_write error rate 100% >= 50%"
+        ]
+      }
+    ],
+    "delivery": {
+      "sent": 32,
+      "delivered": 32,
+      "lost": 0
+    },
+    "faults_injected": [
+      "PAUSE -> redis"
+    ],
+    "prediction": {
+      "probes_affected": [
+        "vote_write"
+      ],
+      "data_loss": false,
+      "recovers": false
+    },
+    "prediction_check": {
+      "probes": true,
+      "recovers": true,
+      "data_loss": true
+    },
+    "stuck_services": [
+      "worker"
+    ],
+    "stuck_details": {
+      "worker": {
+        "exit_code": "1",
+        "last_logs": [
+          "Processing vote for 'a' by 'df0a79d0f812cce'",
+          "Processing vote for 'a' by '2b95f8bde91d66b'",
+          "Processing vote for 'a' by 'b570822601e248c'",
+          "Processing vote for 'a' by 'bc578e2bbff491b'",
+          "Processing vote for 'b' by 'c6016df3b006754'",
+          "Processing vote for 'b' by 'bb65a0b7a567d33'",
+          "Processing vote for 'b' by '9315f40209256a2'",
+          "Processing vote for 'a' by '16226032554f11e'",
+          "System.AggregateException: One or more errors occurred. (Timeout awaiting response (outbound=0KiB, inbound=0KiB, 5299ms elapsed, timeout is 5000ms), command=LPOP, next: LPOP votes, inst: 0, qu: 0, qs:",
+          " ---> StackExchange.Redis.RedisTimeoutException: Timeout awaiting response (outbound=0KiB, inbound=0KiB, 5299ms elapsed, timeout is 5000ms), command=LPOP, next: LPOP votes, inst: 0, qu: 0, qs: 1, aw: ",
+          "   --- End of inner exception stack trace ---",
+          "   at Worker.Program.Main(String[] args) in /source/Program.cs:line 67"
+        ]
+      }
+    },
+    "observation": {
+      "experiment": "E2",
+      "t_start": 1791631910.819951,
+      "t_end": 1791631917.474592,
+      "mttd_s": 5.6,
+      "mttr_s": 0.4,
+      "probe_error_rate": {
+        "vote_write": 0.667,
+        "result_page": 0.0
+      },
+      "delivery": {
+        "accepted": 32,
+        "delivered": 32,
+        "canary_lag_s": null
+      },
+      "queue_depth": {
+        "start": 1,
+        "end": 1
+      },
+      "events": [
+        {
+          "t": 1791631916,
+          "service": "worker",
+          "event": "die",
+          "exit_code": 1
+        }
+      ],
+      "new_log_templates": {
+        "vote": [
+          "<IP> - - [<NUM>/Oct/<NUM>:<NUM>:<NUM>:<NUM> +<NUM>] \"POST / HTTP/<NUM>\" <NUM> <NUM> \"-\" \"python-requests/<NUM>.<NUM>\"",
+          "During handling of the above exception, another exception occurred:",
+          "File \"/usr/local/app/app.py\", line <NUM>, in hello",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/flask/app.py\", line <NUM>, in dispatch_request",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/flask/app.py\", line <NUM>, in full_dispatch_request",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/flask/app.py\", line <NUM>, in wsgi_app",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/_parsers/resp2.py\", line <NUM>, in _read_response",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/_parsers/resp2.py\", line <NUM>, in read_response",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/_parsers/socket.py\", line <NUM>, in _read_from_socket",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/_parsers/socket.py\", line <NUM>, in readline",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/client.py\", line <NUM>, in _execute_command",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/client.py\", line <NUM>, in execute_command",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/commands/core.py\", line <NUM>, in rpush",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in connect",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in get_connection",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in on_connect",
+          "File \"/usr/local/lib/python3.<NUM>/site-packages/redis/connection.py\", line <NUM>, in read_response",
+          "TimeoutError: timed out",
+          "Traceback (most recent call last):",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [ERROR] Exception on / [POST]",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for a",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for b",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] ERROR in app: Exception on / [POST]",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for a",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for b",
+          "^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "conn = self.connection or pool.get_connection(command_name, **options)",
+          "connection.connect()",
+          "data = self._sock.recv(socket_read_size)",
+          "raise TimeoutError(\"Timeout reading from socket\")",
+          "raw = self._buffer.readline()",
+          "redis.exceptions.TimeoutError: Timeout reading from socket",
+          "redis.rpush('votes', data)",
+          "response = self._parser.read_response(disable_decoding=disable_decoding)",
+          "response = self.full_dispatch_request()",
+          "result = self._read_response(disable_decoding=disable_decoding)",
+          "return self._execute_command(*args, **options)",
+          "return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args) # type: ignore[no-any-return]",
+          "return self.execute_command(\"RPUSH\", name, *values)",
+          "rv = self.dispatch_request()",
+          "rv = self.handle_user_exception(e)",
+          "self._read_from_socket()",
+          "self.on_connect()",
+          "self.read_response()"
+        ],
+        "worker": [
+          "--- End of inner exception stack trace ---",
+          "---> StackExchange.Redis.RedisTimeoutException: Timeout awaiting response (outbound=0KiB, inbound=0KiB, 5299ms elapsed, timeout is 5000ms), command=LPOP, next: LPOP votes, inst: <NUM>, qu: <NUM>, qs: <NUM>, aw: False, rs: ReadAsync, ws: Idle, in: <NUM>, in-pipe: <NUM>, out-pipe: <NUM>, serverEndpoint: <IP>:<NUM>, mc: <NUM>/<NUM>/<NUM>, mgr: <NUM> of <NUM> available, clientName: e25cdf821444, IOCP: (Busy=<NUM>,Free=<NUM>,Min=<NUM>,Max=<NUM>), WORKER: (Busy=<NUM>,Free=<NUM>,Min=<NUM>,Max=<NUM>), v: <NUM>.<NUM> (Please take a look at this article for some common client-side issues that can cause timeouts: https://stackexchange.github.io/StackExchange.Redis/Timeouts)",
+          "Processing vote for 'a' by '16226032554f11e'",
+          "System.AggregateException: One or more errors occurred. (Timeout awaiting response (outbound=0KiB, inbound=0KiB, 5299ms elapsed, timeout is 5000ms), command=LPOP, next: LPOP votes, inst: <NUM>, qu: <NUM>, qs: <NUM>, aw: False, rs: ReadAsync, ws: Idle, in: <NUM>, in-pipe: <NUM>, out-pipe: <NUM>, serverEndpoint: <IP>:<NUM>, mc: <NUM>/<NUM>/<NUM>, mgr: <NUM> of <NUM> available, clientName: e25cdf821444, IOCP: (Busy=<NUM>,Free=<NUM>,Min=<NUM>,Max=<NUM>), WORKER: (Busy=<NUM>,Free=<NUM>,Min=<NUM>,Max=<NUM>), v: <NUM>.<NUM> (Please take a look at this article for some common client-side issues that can cause timeouts: https://stackexchange.github.io/StackExchange.Redis/Timeouts))",
+          "at Worker.Program.Main(String[] args) in /source/Program.cs:line <NUM>"
+        ]
+      },
+      "anomalies": [
+        {
+          "type": "probe_error_rate",
+          "service": "vote_write",
+          "value": 0.667,
+          "reason": "Probe error rate exceeds 5%"
+        }
+      ],
+      "kill_switch": "KILL SWITCH: vote_write error rate 100% >= 50%",
+      "stuck_services": [
+        "worker"
+      ]
+    }
+  },
+  {
+    "id": "E3",
+    "name": "Kill DB to test result page and worker resilience",
+    "steps": [
+      {
+        "type": "kill",
+        "target": "db",
+        "delay_s": 0
+      }
+    ],
+    "reason": "Previous kill of redis caused worker crash due to missing restart policy. Cartographer hypothesizes that a DB crash will break result_page and may also crash the worker. Testing kill:db will verify this and assess whether the system recovers without automatic restarts.",
+    "hypothesis": "If the database goes down, result_page requests will fail and the worker will stop processing queued votes, but votes remain in Redis (no data loss). The system will not self\u2011recover because services lack restart policies.",
+    "predicted_probes": [
+      "result_page"
+    ],
+    "status": "aborted",
+    "abort_reason": "KILL SWITCH: result_page error rate 75% >= 50%",
+    "fault_window_s": 1.7,
+    "probes": {
+      "vote_write": {
+        "n": 4,
+        "ok": 4,
+        "error_rate": 0.0,
+        "p50_ms": 9.0,
+        "p95_ms": 10.0,
+        "time_to_first_error_s": null
+      },
+      "result_page": {
+        "n": 4,
+        "ok": 1,
+        "error_rate": 0.75,
+        "p50_ms": 3.7,
+        "p95_ms": 7.9,
+        "time_to_first_error_s": 0.6
+      }
+    },
+    "recovery_s": null,
+    "guard_log": [
+      {
+        "t": 0.7,
+        "reasons": [
+          "result_page error rate 50% >= 50%"
+        ]
+      },
+      {
+        "t": 1.2,
+        "reasons": [
+          "result_page error rate 67% >= 50%"
+        ]
+      },
+      {
+        "t": 1.7,
+        "reasons": [
+          "result_page error rate 75% >= 50%"
+        ]
+      }
+    ],
+    "delivery": {
+      "sent": 110,
+      "delivered": 110,
+      "lost": 0
+    },
+    "faults_injected": [
+      "KILL -> db"
+    ],
+    "prediction": {
+      "probes_affected": [
+        "result_page"
+      ],
+      "data_loss": false,
+      "recovers": false
+    },
+    "prediction_check": {
+      "probes": true,
+      "recovers": true,
+      "data_loss": true
+    },
+    "stuck_services": [
+      "result",
+      "worker"
+    ],
+    "stuck_details": {
+      "result": {
+        "exit_code": "1",
+        "last_logs": [
+          "where: undefined,",
+          "  schema: undefined,",
+          "  table: undefined,",
+          "  column: undefined,",
+          "  dataType: undefined,",
+          "  constraint: undefined,",
+          "  file: 'be-secure.c',",
+          "  line: '207',",
+          "  routine: 'secure_read'",
+          "}",
+          "",
+          "Node.js v18.20.4"
+        ]
+      },
+      "worker": {
+        "exit_code": "1",
+        "last_logs": [
+          "at Npgsql.NpgsqlDataReader.NextResult()",
+          "   at Npgsql.NpgsqlCommand.ExecuteReaderAsync(CommandBehavior behavior, Boolean async, CancellationToken cancellationToken)",
+          "   at Npgsql.NpgsqlCommand.ExecuteNonQuery(Boolean async, CancellationToken cancellationToken)",
+          "   at Npgsql.NpgsqlCommand.ExecuteNonQuery()",
+          "   at Worker.Program.Main(String[] args) in /source/Program.cs:line 58",
+          "  Exception data:",
+          "    Severity: FATAL",
+          "    SqlState: 57P01",
+          "    MessageText: terminating connection due to unexpected postmaster exit",
+          "    File: be-secure.c",
+          "    Line: 207",
+          "    Routine: secure_read"
+        ]
+      }
+    },
+    "observation": {
+      "experiment": "E3",
+      "t_start": 1791631942.9523032,
+      "t_end": 1791631944.632885,
+      "mttd_s": 0.7,
+      "mttr_s": null,
+      "probe_error_rate": {
+        "vote_write": 0.0,
+        "result_page": 0.75
+      },
+      "delivery": {
+        "accepted": 110,
+        "delivered": 110,
+        "canary_lag_s": null
+      },
+      "queue_depth": {
+        "start": 0,
+        "end": 1
+      },
+      "events": [
+        {
+          "t": 1791631943,
+          "service": "db",
+          "event": "die",
+          "exit_code": 137
+        },
+        {
+          "t": 1791631943,
+          "service": "result",
+          "event": "die",
+          "exit_code": 1
+        },
+        {
+          "t": 1791631943,
+          "service": "worker",
+          "event": "die",
+          "exit_code": 1
+        }
+      ],
+      "new_log_templates": {
+        "vote": [
+          "<IP> - - [<NUM>/Oct/<NUM>:<NUM>:<NUM>:<NUM> +<NUM>] \"POST / HTTP/<NUM>\" <NUM> <NUM> \"-\" \"python-requests/<NUM>.<NUM>\"",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> +<NUM>] [<NUM>] [INFO] Received vote for a",
+          "[<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM>,<NUM>] INFO in app: Received vote for a"
+        ],
+        "result": [
+          "Emitted 'error' event on Client instance at:",
+          "Node.js v18.<NUM>",
+          "[... lines matching original stack trace ...]",
+          "^",
+          "at /node_modules/pg/lib/connection.js:<NUM>:<NUM>",
+          "at Client._handleErrorEvent (/node_modules/pg/lib/client.js:<NUM>:<NUM>)",
+          "at Client._handleErrorMessage (/node_modules/pg/lib/client.js:<NUM>:<NUM>)",
+          "at Connection.emit (node:events:<NUM>:<NUM>)",
+          "at Parser.handlePacket (/node_modules/pg-protocol/dist/parser.js:<NUM>:<NUM>)",
+          "at Parser.parse (/node_modules/pg-protocol/dist/parser.js:<NUM>:<NUM>)",
+          "at Parser.parseErrorMessage (/node_modules/pg-protocol/dist/parser.js:<NUM>:<NUM>)",
+          "at Readable.push (node:internal/streams/readable:<NUM>:<NUM>)",
+          "at Readable.push (node:internal/streams/readable:<NUM>:<NUM>) {",
+          "at Socket.<anonymous> (/node_modules/pg-protocol/dist/index.js:<NUM>:<NUM>)",
+          "at Socket.emit (node:events:<NUM>:<NUM>)",
+          "at TCP.onStreamRead (node:internal/stream_base_commons:<NUM>:<NUM>)",
+          "at addChunk (node:internal/streams/readable:<NUM>:<NUM>)",
+          "at readableAddChunk (node:internal/streams/readable:<NUM>:<NUM>)",
+          "code: '57P01',",
+          "column: undefined,",
+          "constraint: undefined,",
+          "dataType: undefined,",
+          "detail: undefined,",
+          "error: terminating connection due to unexpected postmaster exit",
+          "file: 'be-secure.c',",
+          "hint: undefined,",
+          "internalPosition: undefined,",
+          "internalQuery: undefined,",
+          "length: <NUM>,",
+          "line: '<NUM>',",
+          "node:events:<NUM>",
+          "position: undefined,",
+          "routine: 'secure_read'",
+          "schema: undefined,",
+          "severity: 'FATAL',",
+          "table: undefined,",
+          "throw er; // Unhandled 'error' event",
+          "where: undefined,",
+          "}"
+        ],
+        "worker": [
+          "--- End of stack trace from previous location ---",
+          "Exception data:",
+          "File: be-secure.c",
+          "Line: <NUM>",
+          "MessageText: terminating connection due to unexpected postmaster exit",
+          "Npgsql.PostgresException (<HEX>): 57P01: terminating connection due to unexpected postmaster exit",
+          "Processing vote for 'a' by '3d43ef2f9a5d323'",
+          "Processing vote for 'a' by '88512dea96a19aa'",
+          "Processing vote for 'b' by '594490491ccb0a0'",
+          "Routine: secure_read",
+          "Severity: FATAL",
+          "SqlState: 57P01",
+          "at Npgsql.NpgsqlCommand.ExecuteNonQuery()",
+          "at Npgsql.NpgsqlCommand.ExecuteNonQuery(Boolean async, CancellationToken cancellationToken)",
+          "at Npgsql.NpgsqlCommand.ExecuteReaderAsync(CommandBehavior behavior, Boolean async, CancellationToken cancellationToken)",
+          "at Npgsql.NpgsqlConnector.<>c__DisplayClass160_0.<<DoReadMessage>g__ReadMessageLong|<NUM>>d.MoveNext()",
+          "at Npgsql.NpgsqlDataReader.NextResult()",
+          "at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming)",
+          "at Worker.Program.Main(String[] args) in /source/Program.cs:line <NUM>"
+        ],
+        "db": [
+          "<NUM>-<NUM>-<NUM> <NUM>:<NUM>:<NUM> UTC [<NUM>] FATAL: terminating connection due to unexpected postmaster exit"
+        ]
+      },
+      "anomalies": [
+        {
+          "type": "probe_error_rate",
+          "service": "result_page",
+          "value": 0.75,
+          "reason": "Probe error rate exceeds 5%"
+        },
+        {
+          "type": "queue_growth",
+          "service": "redis",
+          "value": 1,
+          "reason": "Queue depth increased during observation"
+        }
+      ],
+      "kill_switch": "KILL SWITCH: result_page error rate 75% >= 50%",
+      "stuck_services": [
+        "result",
+        "worker"
+      ]
+    }
+  }
+]

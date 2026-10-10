@@ -1,0 +1,288 @@
+INFO     [15:35:57] AUTOPILOT start. Goal: what if redis dies?
+AI       [15:35:57] [Cartographer] single points of failure: ['redis', 'db']
+INFO     [15:35:57] [graph] cartographer done
+AI       [15:35:57] AGENT step 1: (rule-based fallback) kill redis
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E1 kill redis
+INFO     [15:35:57] [graph] governor done
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+AI       [15:35:57] [Diagnostician] E1 root cause: worker crashed during the fault and has no restart policy, so it stayed down
+INFO     [15:35:57] [graph] diagnostician done
+AI       [15:35:57] AGENT step 2: (rule-based fallback) partition db
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E2 partition db
+INFO     [15:35:57] [graph] governor done
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+AI       [15:35:57] AGENT step 3: (rule-based fallback) pause vote
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E3 pause vote
+INFO     [15:35:57] [graph] governor done
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+AI       [15:35:57] AGENT step 4: (rule-based fallback) latency redis
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E4 latency redis
+INFO     [15:35:57] [graph] governor done
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+AI       [15:35:57] AGENT step 5: (rule-based fallback) spike result
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E5 spike result
+INFO     [15:35:57] [graph] governor done
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+AI       [15:35:57] AGENT step 6: (rule-based fallback) COMBINED: worker down, then redis crash
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E6 COMBINED: worker down, then redis crash (needs human sign-off)
+INFO     [15:35:57] [graph] governor done
+OK       [15:35:57] [Human] approved E6
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+AI       [15:35:57] [Diagnostician] E6 root cause: worker crashed during the fault and has no restart policy, so it stayed down
+INFO     [15:35:57] [graph] diagnostician done
+INFO     [15:35:57] [graph] experimenter done
+AI       [15:35:57] [Remediator] (rules) applying redis-durable for ['E1', 'E6']: The queue lost accepted work when it crashed. Turn on append-only persistence (fsync always).
+AI       [15:35:57] [Remediator] (rules) applying restart-policy for ['E1', 'E6']: Crashed containers stayed down until a human restarted them. Add `restart: unless-stopped`.
+INFO     [15:35:57] [graph] remediator done
+INFO     [15:35:57] [Verifier] re-running E1 against the fixed system
+INFO     [15:35:57] [Verifier] re-running E6 against the fixed system
+OK       [15:35:57] [Verifier] E1 RPN 700 -> 98 (86% lower)
+OK       [15:35:57] [Verifier] E6 RPN 600 -> 84 (86% lower)
+INFO     [15:35:57] [graph] verify done
+OK       [15:35:57] [Reporter] report written: /Users/arthambansal/Downloads/bosch_repo/runs/auto_20261010_153557/report.md (resilience 48/100, grade F)
+INFO     [15:35:57] [graph] reporter done
+GUARD    [15:35:57] [Governor] REJECTED EX double kill: would take down 2 data stores at once (db, redis); policy allows one
+AI       [15:35:57] [T] started: g
+WARN     [15:35:57] [T] tried to conclude with 0 tool call(s); evidence required, continuing
+WARN     [15:35:57] [T] tried to conclude with 0 tool call(s); evidence required, continuing
+AI       [15:35:57] [T] thinks: t
+AI       [15:35:57] [T] calls probe({})
+AI       [15:35:57] [T] thinks: t
+AI       [15:35:57] [T] calls probe({})
+AI       [15:35:57] [T] conclusion: t
+INFO     [15:35:57] AUTOPILOT start. Goal: find the weakest points
+AI       [15:35:57] [Cartographer] single points of failure: ['redis', 'db']
+INFO     [15:35:57] [graph] cartographer done
+AI       [15:35:57] AGENT step 1: (rule-based fallback) kill redis
+INFO     [15:35:57] [graph] experimenter done
+OK       [15:35:57] [Governor] approved E1 kill redis
+INFO     [15:35:57] [graph] governor done
+INFO     [15:35:57] [graph] approval done
+INFO     [15:35:57] [graph] execute done
+INFO     [15:35:57] [graph] evaluate done
+GUARD    [15:35:57] STOP file detected before node 'diagnostician': autopilot halted, restoring everything
+OK       [15:35:57] [Reporter] report written: /Users/arthambansal/Downloads/bosch_repo/runs/auto_20261010_153557/report.md (resilience 95/100, grade A)
+INFO     [15:35:57] AUTOPILOT start. Goal: find the weakest points
+AI       [15:35:57] [Cartographer] started: Find the weaknesses most worth testing, each backed by evidence from a tool.
+AI       [15:35:57] AI (openai) thinking about: Cartographer_step1 ...
+AI       [15:35:58] [Cartographer] thinks: (requested a tool call)
+AI       [15:35:58] AI (openai) thinking about: Cartographer_step2 ...
+AI       [15:35:59] [Cartographer] thinks: (requested a tool call)
+AI       [15:35:59] AI (openai) thinking about: Cartographer_step3 ...
+AI       [15:35:59] [Cartographer] thinks: (requested a tool call)
+AI       [15:35:59] AI (openai) thinking about: Cartographer_step4 ...
+AI       [15:36:00] [Cartographer] thinks: (requested a tool call)
+AI       [15:36:00] [Cartographer] calls list_containers({})
+AI       [15:36:00] AI (openai) thinking about: Cartographer_step5 ...
+AI       [15:36:01] [Cartographer] thinks: (requested a tool call)
+AI       [15:36:01] [Cartographer] calls service_config({"service": "redis"})
+AI       [15:36:01] AI (openai) thinking about: Cartographer_step6 ...
+AI       [15:36:02] [Cartographer] thinks: (requested a tool call)
+AI       [15:36:02] [Cartographer] calls service_config({"service": "vote"})
+AI       [15:36:02] AI (openai) thinking about: Cartographer_step7 ...
+WARN     [15:36:02] AI rate-limited, retrying in 3s
+WARN     [15:36:05] AI rate-limited, retrying in 8s
+AI       [15:36:14] [Cartographer] thinks: (requested a tool call)
+AI       [15:36:14] [Cartographer] calls service_config({"service": "result"})
+AI       [15:36:14] AI (openai) thinking about: Cartographer_step8 ...
+WARN     [15:36:14] AI rate-limited, retrying in 3s
+WARN     [15:36:17] AI rate-limited, retrying in 8s
+AI       [15:36:27] [Cartographer] thinks: 
+AI       [15:36:27] AI (openai) thinking about: Cartographer_step9 ...
+WARN     [15:36:29] AI rate-limited, retrying in 3s
+WARN     [15:36:32] AI rate-limited, retrying in 8s
+WARN     [15:36:40] AI rate-limited, retrying in 15s
+AI       [15:36:56] [Cartographer] thinks: (requested a tool call)
+AI       [15:36:56] [Cartographer] calls service_config({"service": "db"})
+AI       [15:36:56] AI (openai) thinking about: Cartographer_step10 ...
+WARN     [15:36:56] AI rate-limited, retrying in 3s
+WARN     [15:36:59] AI rate-limited, retrying in 8s
+AI       [15:37:08] [Cartographer] thinks: 
+AI       [15:37:08] AI (openai) thinking about: Cartographer_step11 ...
+WARN     [15:37:08] AI rate-limited, retrying in 3s
+WARN     [15:37:11] AI rate-limited, retrying in 8s
+WARN     [15:37:19] AI rate-limited, retrying in 15s
+AI       [15:37:36] [Cartographer] thinks: 
+AI       [15:37:36] AI (openai) thinking about: Cartographer_step12 ...
+WARN     [15:37:36] AI rate-limited, retrying in 3s
+WARN     [15:37:39] AI rate-limited, retrying in 8s
+AI       [15:37:48] [Cartographer] conclusion: Providing final assessment of single points of failure and risks with evidence
+AI       [15:37:48] [Cartographer] single points of failure: ['vote', 'result', 'worker', 'redis', 'db']
+INFO     [15:37:48] [graph] cartographer done
+AI       [15:37:48] AI (openai) thinking about: agent_step1 ...
+AI       [15:37:50] AGENT step 1 (openai): Kill Redis to test recovery
+AI       [15:37:50]   because: Test hypothesis that a crash of the single Redis instance (no restart policy, no healthcheck) will not be auto‑recovered and will cause vote_write failures, confirming it as a single point of failure.
+AI       [15:37:50]   predicts: {"probes_affected": ["vote_write"], "data_loss": true, "recovers": false}
+INFO     [15:37:50] [graph] experimenter done
+OK       [15:37:50] [Governor] approved E1 Kill Redis to test recovery
+INFO     [15:37:50] [graph] governor done
+INFO     [15:37:50] [graph] approval done
+INFO     [15:37:50] === E1: Kill Redis to test recovery ===
+AI       [15:37:50] Why: Test hypothesis that a crash of the single Redis instance (no restart policy, no healthcheck) will not be auto‑recovered and will cause vote_write failures, confirming it as a single point of failure.
+INJECT   [15:38:00] INJECT KILL -> redis OK
+GUARD    [15:38:01] guard 1/3: vote_write error rate 100% >= 50%
+GUARD    [15:38:01] guard 2/3: vote_write error rate 100% >= 50%
+GUARD    [15:38:02] guard 3/3: vote_write error rate 100% >= 50%
+GUARD    [15:38:02] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: vote_write error rate 100% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [15:38:02] RESTORE KILL -> redis OK
+OK       [15:38:03] Recovered in 0.4s
+GUARD    [15:38:07] CASCADE FAILURE: ['worker'] crashed and did NOT come back on their own (probes look healthy, but the pipeline is silently broken)
+OK       [15:38:17] No data loss: 29 accepted, 29 delivered
+AI       [15:38:17] PREDICTION WRONG {'probes': True, 'recovers': True, 'data_loss': False}
+INFO     [15:38:17] [graph] execute done
+INFO     [15:38:17] [graph] evaluate done
+AI       [15:38:17] [Diagnostician] started: Explain the root cause of what happened in experiment E1.
+AI       [15:38:17] AI (openai) thinking about: Diagnostician_step1 ...
+AI       [15:38:17] [Diagnostician] thinks: (requested a tool call)
+AI       [15:38:17] [Diagnostician] calls container_logs({"service": "worker", "lines": 20})
+AI       [15:38:17] AI (openai) thinking about: Diagnostician_step2 ...
+WARN     [15:38:17] AI rate-limited, retrying in 3s
+WARN     [15:38:21] AI rate-limited, retrying in 8s
+AI       [15:38:30] [Diagnostician] thinks: (requested a tool call)
+AI       [15:38:30] [Diagnostician] calls container_logs({"service": "worker", "lines": 20})
+AI       [15:38:30] AI (openai) thinking about: Diagnostician_step3 ...
+WARN     [15:38:30] AI rate-limited, retrying in 3s
+WARN     [15:38:34] AI rate-limited, retrying in 8s
+AI       [15:38:43] [Diagnostician] thinks: (requested a tool call)
+AI       [15:38:43] [Diagnostician] calls container_logs({"service": "worker", "lines": 50})
+AI       [15:38:43] AI (openai) thinking about: Diagnostician_step4 ...
+WARN     [15:38:43] AI rate-limited, retrying in 3s
+WARN     [15:38:46] AI rate-limited, retrying in 8s
+WARN     [15:38:55] AI rate-limited, retrying in 15s
+AI       [15:39:10] [Diagnostician] thinks: (requested a tool call)
+AI       [15:39:10] [Diagnostician] calls list_containers({})
+AI       [15:39:11] AI (openai) thinking about: Diagnostician_step5 ...
+WARN     [15:39:11] AI rate-limited, retrying in 3s
+WARN     [15:39:14] AI rate-limited, retrying in 8s
+AI       [15:39:23] [Diagnostician] thinks: (requested a tool call)
+AI       [15:39:23] [Diagnostician] calls container_logs({"service": "worker", "lines": 100})
+AI       [15:39:23] AI (openai) thinking about: Diagnostician_step6 ...
+WARN     [15:39:23] AI rate-limited, retrying in 3s
+WARN     [15:39:26] AI rate-limited, retrying in 8s
+WARN     [15:39:34] AI rate-limited, retrying in 15s
+WARN     [15:39:50] AI HTTP 429: {"error":{"message":"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_01m4j8a31demzrbbc9j15ckbt7` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3578, Requ -> retry 2/2
+AI       [15:39:52] [Diagnostician] conclusion: The worker failed to connect to Redis after the kill, causing vote_write errors and abort.
+AI       [15:39:52] [Diagnostician] E1 root cause: The injected KILL fault terminated the Redis service; the worker attempted to resolve the Redis hostname and open a connection, but the DNS lookup failed, leading to a stack trace in GetIp/OpenRedisConnection and an exit code 1. This caused 100% error rate on vote_write and triggered the kill switch.
+INFO     [15:39:52] [graph] diagnostician done
+AI       [15:39:52] AI (openai) thinking about: agent_step2 ...
+AI       [15:39:54] AGENT step 2 (openai): Pause Redis to test worker resilience
+AI       [15:39:54]   because: The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.
+AI       [15:39:54]   predicts: {"probes_affected": ["vote_write"], "data_loss": false, "recovers": false}
+INFO     [15:39:54] [graph] experimenter done
+OK       [15:39:54] [Governor] approved E2 Pause Redis to test worker resilience
+INFO     [15:39:54] [graph] governor done
+INFO     [15:39:54] [graph] approval done
+INFO     [15:39:54] === E2: Pause Redis to test worker resilience ===
+AI       [15:39:54] Why: The previous kill of Redis caused the worker to crash, leading to 100% vote_write errors. We need to see if a transient Redis outage (pause) also crashes the worker or if the system can tolerate brief unavailability.
+INJECT   [15:40:04] INJECT PAUSE -> redis OK
+GUARD    [15:40:07] guard 1/3: vote_write error rate 50% >= 50%
+GUARD    [15:40:08] guard 2/3: vote_write error rate 50% >= 50%
+GUARD    [15:40:08] guard 3/3: vote_write error rate 50% >= 50%
+GUARD    [15:40:08] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: vote_write error rate 50% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [15:40:08] RESTORE PAUSE -> redis OK
+OK       [15:40:10] Recovered in 0.4s
+OK       [15:40:19] No data loss: 24 accepted, 25 delivered
+AI       [15:40:19] PREDICTION WRONG {'probes': False, 'recovers': False, 'data_loss': True}
+INFO     [15:40:19] [graph] execute done
+INFO     [15:40:19] [graph] evaluate done
+AI       [15:40:19] [Diagnostician] started: Explain the root cause of what happened in experiment E2.
+AI       [15:40:19] AI (openai) thinking about: Diagnostician_step1 ...
+AI       [15:40:20] [Diagnostician] thinks: (requested a tool call)
+AI       [15:40:20] [Diagnostician] calls list_containers({})
+AI       [15:40:20] AI (openai) thinking about: Diagnostician_step2 ...
+WARN     [15:40:20] AI rate-limited, retrying in 3s
+AI       [15:40:24] [Diagnostician] thinks: (requested a tool call)
+AI       [15:40:24] [Diagnostician] calls container_logs({"service": "worker", "lines": 20})
+AI       [15:40:24] AI (openai) thinking about: Diagnostician_step3 ...
+WARN     [15:40:24] AI rate-limited, retrying in 3s
+WARN     [15:40:27] AI rate-limited, retrying in 8s
+AI       [15:40:36] [Diagnostician] thinks: (requested a tool call)
+AI       [15:40:36] [Diagnostician] calls container_logs({"service": "worker", "lines": 40})
+AI       [15:40:36] AI (openai) thinking about: Diagnostician_step4 ...
+WARN     [15:40:37] AI rate-limited, retrying in 3s
+WARN     [15:40:40] AI rate-limited, retrying in 8s
+WARN     [15:40:49] AI rate-limited, retrying in 15s
+AI       [15:41:05] [Diagnostician] thinks: (requested a tool call)
+AI       [15:41:05] [Diagnostician] calls container_logs({"service": "vote", "lines": 20})
+AI       [15:41:05] AI (openai) thinking about: Diagnostician_step5 ...
+WARN     [15:41:05] AI rate-limited, retrying in 3s
+WARN     [15:41:08] AI rate-limited, retrying in 8s
+WARN     [15:41:16] AI rate-limited, retrying in 15s
+AI       [15:41:32] [Diagnostician] thinks: (requested a tool call)
+AI       [15:41:32] [Diagnostician] calls container_logs({"service": "worker", "lines": 80})
+AI       [15:41:32] AI (openai) thinking about: Diagnostician_step6 ...
+WARN     [15:41:32] AI rate-limited, retrying in 3s
+WARN     [15:41:35] AI rate-limited, retrying in 8s
+WARN     [15:41:43] AI rate-limited, retrying in 15s
+AI       [15:41:59] [Diagnostician] conclusion: (requested a tool call)
+AI       [15:41:59] [Diagnostician] E2 root cause: KILL SWITCH: vote_write error rate 50% >= 50%
+INFO     [15:41:59] [graph] diagnostician done
+AI       [15:41:59] AI (openai) thinking about: agent_step3 ...
+AI       [15:42:01] AGENT step 3 (openai): Kill DB to test result_page resilience
+AI       [15:42:01]   because: Previous kill of Redis caused a worker crash and 100% vote_write errors, showing lack of automatic recovery. We now test the analogous single‑point failure for the database, which should affect result_page and likely not recover automatically due to missing restart policy.
+AI       [15:42:01]   predicts: {"probes_affected": ["result_page"], "data_loss": false, "recovers": false}
+INFO     [15:42:01] [graph] experimenter done
+OK       [15:42:01] [Governor] approved E3 Kill DB to test result_page resilience
+INFO     [15:42:01] [graph] governor done
+INFO     [15:42:01] [graph] approval done
+INFO     [15:42:01] === E3: Kill DB to test result_page resilience ===
+AI       [15:42:01] Why: Previous kill of Redis caused a worker crash and 100% vote_write errors, showing lack of automatic recovery. We now test the analogous single‑point failure for the database, which should affect result_page and likely not recover automatically due to missing restart policy.
+INJECT   [15:42:12] INJECT KILL -> db OK
+GUARD    [15:42:12] guard 1/3: result_page error rate 50% >= 50%
+GUARD    [15:42:13] guard 2/3: result_page error rate 67% >= 50%
+GUARD    [15:42:13] guard 3/3: result_page error rate 75% >= 50%
+GUARD    [15:42:13] !!!!!!!!!!!!!!!!!!!! KILL SWITCH: result_page error rate 75% >= 50% !!!!!!!!!!!!!!!!!!!!
+RESTORE  [15:42:13] RESTORE KILL -> db OK
+WARN     [15:42:53] NOT recovered within timeout
+GUARD    [15:42:57] CASCADE FAILURE: ['result', 'worker'] crashed and did NOT come back on their own (probes look healthy, but the pipeline is silently broken)
+GUARD    [15:43:11] DATA LOSS: 110 votes accepted, only 109 reached the database (1 lost)
+AI       [15:43:11] PREDICTION WRONG {'probes': True, 'recovers': True, 'data_loss': False}
+INFO     [15:43:11] [graph] execute done
+INFO     [15:43:11] [graph] evaluate done
+AI       [15:43:11] [Diagnostician] started: Explain the root cause of what happened in experiment E3.
+AI       [15:43:11] AI (openai) thinking about: Diagnostician_step1 ...
+AI       [15:43:12] [Diagnostician] thinks: (requested a tool call)
+AI       [15:43:12] AI (openai) thinking about: Diagnostician_step2 ...
+AI       [15:43:13] [Diagnostician] thinks: Check container status of result and worker to confirm they exited
+AI       [15:43:13] [Diagnostician] calls list_containers({})
+AI       [15:43:13] AI (openai) thinking about: Diagnostician_step3 ...
+AI       [15:43:13] [Diagnostician] thinks: (requested a tool call)
+AI       [15:43:13] [Diagnostician] calls container_logs({"service": "db", "lines": 20})
+AI       [15:43:13] AI (openai) thinking about: Diagnostician_step4 ...
+WARN     [15:43:14] AI rate-limited, retrying in 3s
+AI       [15:43:18] [Diagnostician] thinks: (requested a tool call)
+AI       [15:43:18] [Diagnostician] calls service_config({"service": "result", "args": {}})
+AI       [15:43:18] AI (openai) thinking about: Diagnostician_step5 ...
+WARN     [15:43:18] AI rate-limited, retrying in 3s
+WARN     [15:43:21] AI rate-limited, retrying in 8s
+WARN     [15:43:29] AI rate-limited, retrying in 15s
+AI       [15:43:45] [Diagnostician] thinks: (requested a tool call)
+AI       [15:43:45] [Diagnostician] calls container_logs({"service": "result", "lines": 20})
+AI       [15:43:45] AI (openai) thinking about: Diagnostician_step6 ...
+WARN     [15:43:45] AI rate-limited, retrying in 3s
+WARN     [15:43:48] AI rate-limited, retrying in 8s
+AI       [15:43:58] [Diagnostician] conclusion: The DB kill caused connection failures that propagated to result_page and worker, leading to the abort.
+AI       [15:43:58] [Diagnostician] E3 root cause: The injected KILL of the PostgreSQL service terminated all active connections, causing the result_page service to throw a secure_read error and the worker to raise a “Connection is not open” exception, which in turn drove the error rate above the 50% threshold and triggered the kill switch.
+INFO     [15:43:58] [graph] diagnostician done
+INFO     [15:43:58] [graph] experimenter done
+INFO     [15:43:58] [graph] remediator done
+OK       [15:43:58] [Reporter] report written: /Users/arthambansal/Downloads/bosch_repo/runs/auto_20261010_153557/report.md (resilience 49/100, grade F)
+INFO     [15:43:58] [graph] reporter done

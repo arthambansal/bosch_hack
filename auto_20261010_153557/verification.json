@@ -1,0 +1,101 @@
+{
+  "compare": [
+    {
+      "id": "E1",
+      "failure_mode": "kill redis",
+      "rpn_before": 700,
+      "rpn_after": 98,
+      "S": [
+        10,
+        7
+      ],
+      "D": [
+        10,
+        2
+      ],
+      "reduction_pct": 86
+    },
+    {
+      "id": "E6",
+      "failure_mode": "kill worker then kill redis",
+      "rpn_before": 600,
+      "rpn_after": 84,
+      "S": [
+        10,
+        7
+      ],
+      "D": [
+        10,
+        2
+      ],
+      "reduction_pct": 86
+    }
+  ],
+  "results": [
+    {
+      "id": "E1",
+      "name": "kill redis",
+      "steps": [
+        {
+          "type": "kill",
+          "target": "redis",
+          "delay_s": 0
+        }
+      ],
+      "reason": "redis is relied on by vote, worker and holds state; a kill here is predicted to break vote_write.",
+      "hypothesis": "Callers fail fast (no hang), the service recovers after restart, and no accepted data is lost.",
+      "predicted_probes": [
+        "vote_write"
+      ],
+      "status": "aborted",
+      "recovery_s": 0.5,
+      "probes": {
+        "vote_write": {
+          "error_rate": 0.75,
+          "time_to_first_error_s": 0.5,
+          "p95_ms": 60
+        }
+      },
+      "delivery": {
+        "lost": 0
+      },
+      "stuck_services": [],
+      "stuck_details": {}
+    },
+    {
+      "id": "E6",
+      "name": "COMBINED: worker down, then redis crash",
+      "steps": [
+        {
+          "type": "kill",
+          "target": "worker",
+          "delay_s": 0
+        },
+        {
+          "type": "kill",
+          "target": "redis",
+          "delay_s": 8
+        }
+      ],
+      "reason": "worker drains redis. With worker down, accepted work piles up inside redis; crashing redis at that moment tests whether buffered data survives.",
+      "hypothesis": "Every vote the user saw accepted should still reach the database.",
+      "predicted_probes": [
+        "vote_write"
+      ],
+      "status": "aborted",
+      "recovery_s": 0.5,
+      "probes": {
+        "vote_write": {
+          "error_rate": 0.75,
+          "time_to_first_error_s": 0.5,
+          "p95_ms": 60
+        }
+      },
+      "delivery": {
+        "lost": 0
+      },
+      "stuck_services": [],
+      "stuck_details": {}
+    }
+  ]
+}
