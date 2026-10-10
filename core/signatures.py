@@ -8,6 +8,46 @@ FEATURES = frozenset(("entry_errors", "read_errors", "queue_growth", "db_stall",
 FIELDS = {"id", "from", "fault", "features", "root_cause", "confirmed"}
 
 
+def verified_improvement(fix, report):
+    """Check required measured improvements; a 'keep' label alone is insufficient.
+
+    Regression acceptance is explicitly reviewed by the registering human.
+    This function cannot authenticate the provenance of caller-supplied data.
+    """
+    import math
+    def numbers(value):
+        values = value if isinstance(value, list) else [value]
+        return values if values and all(type(v) in (int, float) and math.isfinite(v) and v >= 0 for v in values) else []
+    plan = fix.get("verification") or {}
+    repeat = plan.get("repeat")
+    runs = report.get("runs")
+    if report.get("decision") != "keep" or report.get("fix") != fix.get("id"):
+        return False
+    if type(repeat) is not int or repeat < 1 or type(runs) is not int or runs < repeat:
+        return False
+    metrics = plan.get("must_improve")
+    if not isinstance(metrics, list) or not metrics or set(metrics) - {"mttr_s", "delivery_ratio", "rpn"}:
+        return False
+    for metric in metrics:
+        before = (report.get("before") or {}).get(metric)
+        after = (report.get("after") or {}).get(metric)
+        measured_after = numbers(after)
+        if not measured_after or (isinstance(after, list) and len(after) != runs):
+            return False
+        measured_before = numbers(before)
+        if metric == "mttr_s" and before is None:
+            # Null may mean unmeasured, so it cannot prove improvement.
+            return False
+        if not measured_before:
+            return False
+        if metric == "delivery_ratio":
+            if max(measured_before + measured_after) > 1 or min(measured_after) <= max(measured_before):
+                return False
+        elif max(measured_after) >= min(measured_before):
+            return False
+    return bool(report.get("regression"))
+
+
 def _validate_features(features):
     if not isinstance(features, dict) or set(features) - FEATURES:
         raise ValueError("features must use the Section 8.2 feature names")
@@ -108,3 +148,23 @@ def find_similar(features, signatures, limit=3):
                             "similarity": jaccard(features, signature["features"]),
                             "compared_features": sorted(features.keys() & signature["features"].keys())})
     return sorted(matches, key=lambda m: (-m["similarity"], m["signature"]["id"]))[:limit]
+
+
+def error_templates(observation):
+    """Normalize recorded templates for exact pattern retrieval, not embeddings.
+
+    Use the Observer's same normalization; preserve service identity in results.
+    Values may be template lists or template-to-count mappings.
+    """
+    import re
+    from .observer import normalize_log
+    error_marker = re.compile(r"error|exception|fail(?:ed|ure)?|refused|timeout|timed out|unavailable|denied|fatal|"
+                              r"name or service not known|getaddrinfo|enotfound", re.IGNORECASE)
+    templates = {}
+    for service, lines in (observation.get("new_log_templates") or {}).items():
+        if not isinstance(lines, (list, dict)):
+            continue
+        for line in lines:
+            if isinstance(line, str) and line.strip() and error_marker.search(line):
+                templates[(service, normalize_log(line).lower())] = line
+    return templates
