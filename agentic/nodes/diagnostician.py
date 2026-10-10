@@ -185,7 +185,8 @@ def memory_diagnosis(configuration, graph, res):
                               f"Proposed change: {json.dumps(fix['change'], ensure_ascii=False)[:400]}. "
                               "Review applicability and pass existing safety/approval controls before applying."}
     LIVE.event("info", f"[Diagnostician] memory matched {signature['id']}; verified fix {fix['id']}; skipped LLM")
-    return {"final": final, "tool_calls": 0, "trace": [], "known_evidence": [], "source": "memory"}
+    return {"final": final, "tool_calls": 0, "trace": [], "known_evidence": [], "source": "memory",
+            "signature_id": signature["id"], "seen_in_run": signature.get("from")}
 
 
 def investigate(cfg, graph, res, offline=False, symptoms=None):
@@ -268,9 +269,41 @@ def rule_based(res, graph=None):
                               "the cause and permanent loss are not established.",
                 "evidence": [f"delivery audit: {res['delivery']}"], "affected_services": [],
                 "confidence": "low", "suggested_fix": ""}
-    return {"root_cause": res.get("abort_reason") or "behaviour differed from the prediction",
-            "evidence": [str(res.get("prediction_check"))], "affected_services": [],
+    steps = res.get("steps") or []
+    targets = [s.get("target") for s in steps if s.get("target")]
+    probes = res.get("probes") or {}
+    hit = sorted(((n, p.get("error_rate") or 0) for n, p in probes.items()), key=lambda x: -x[1])
+    worst = [f"{n} {r:.0%} errors" for n, r in hit if r > 0][:2]
+    action = " then ".join(f"{s.get('type')} {s.get('target')}" for s in steps) or "the injected fault"
+    users = sorted({u for t in targets for u in ((graph or {}).get("services", {}).get(t, {}).get("used_by") or [])})
+    cause = (f"The injected {action} made {', '.join(worst) or 'the probes degrade'}"
+             + (f"; the kill switch restored it after {res.get('fault_window_s')} s" if res.get("status") == "aborted" else "")
+             + (f". {', '.join(targets)} has a single instance on the request path"
+                + (f" used by {', '.join(users)}" if users else "") + ", so there is no failover" if targets else "")
+             + f". Recovery after restoration took {res.get('recovery_s')} s. Deeper mechanism not established without AI analysis.")
+    ev = [f"{n}: error rate {p.get('error_rate')}, p95 {p.get('p95_ms')} ms, n={p.get('n')}" for n, p in probes.items()]
+    if res.get("abort_reason"):
+        ev.append(str(res["abort_reason"]))
+    known = (graph or {}).get("services")
+    return {"root_cause": cause, "evidence": ev, "affected_services": [t for t in targets if not known or t in known],
             "confidence": "low", "suggested_fix": ""}
+
+
+def _publish_memory(exp_id, out, final):
+    """Dashboard 'Failure memory' panel: how many confirmed signatures exist, and whether this diagnosis came from one."""
+    try:
+        count = 0
+        if DEFAULT_PATH.exists():
+            with KnowledgeStore() as store:
+                count = len(store.signatures())
+        hit = None
+        if out.get("source") == "memory":
+            hit = {"experiment": exp_id, "signature_id": out.get("signature_id"), "similarity": out.get("similarity"),
+                   "seen_in_run": out.get("seen_in_run"), "root_cause": str(final.get("root_cause", ""))[:300],
+                   "saved_s": None}
+        LIVE.set(memory={"last_hit": hit, "signatures": count})
+    except Exception:  # noqa: BLE001 - display only
+        pass
 
 
 def diagnostician_node(state):
@@ -290,7 +323,7 @@ def diagnostician_node(state):
     if not final or len(cause) < 25 or cause.upper().startswith("KILL SWITCH"):    # empty, or just a copied log line
         final = None
     by = "agent" if final and out.get("source") != "memory" else "rules"
-    final = dict(final or rule_based(res))
+    final = dict(final or rule_based(res, state.get("graph") or {}))
     # Phase 1 evidence always travels with the diagnosis, then whatever the agent or rules cited
     final["evidence"] = list(dict.fromkeys(list(symptoms.get("evidence") or [])
                             + [str(e) for e in final.get("evidence") or []]
@@ -298,8 +331,9 @@ def diagnostician_node(state):
     final["affected_services"] = sorted(set(final.get("affected_services") or []) | set(symptoms.get("affected_services") or []))
     final["fault_detected"] = detected
     final["by"] = by
-    LIVE.event("ai", f"[Diagnostician] {res['id']} root cause: {final.get('root_cause')}")
+    LIVE.event("ai", f"[Diagnostician] {res['id']} root cause ({by}): {final.get('root_cause')}")
     inv[res["id"]] = final
+    _publish_memory(res["id"], out, final)
     return {"investigations": inv}
 
 

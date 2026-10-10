@@ -697,3 +697,8 @@ h1 > span { color: #9a633e; }
 @media (max-width: 1440px) { .product-header { gap: 12px; flex-wrap: wrap; } .product-header .top-navigation { order: 3; flex-basis: 100%; } .top-navigation [role="tablist"] { justify-content: center; } }
 @media (max-width: 650px) { .presentation-mode .panel-body { padding: 16px; } .history-actions { align-items: stretch; } .report-source { padding: 12px; } }
 @media (prefers-reduced-motion: reduce) { .presentation-toggle, .history-actions button { transition: none; } }
+.provenance-live { color: #1f5a3d; }
+.provenance-live p strong { color: #1f5a3d; }
+.provenance-warn { color: #8a3b12; background: #fbe9dc; border-radius: 8px; padding: 6px 10px; }
+.provenance-warn p { font-size: 12px; }
+.status-rollback_failed { background: #f8dcd7; color: #8f2318; }

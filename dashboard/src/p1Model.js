@@ -43,7 +43,7 @@ export function fixesPresentation(value) {
   return arr(value).map(raw=>{
     const fix=obj(raw),suggestion=fix.kind==='code_suggestion';
     const validStatus=['proposed','applied','verified','not_improved','rolled_back'].includes(fix.status);
-    return {id:textValue(fix.id),title:textValue(fix.title),kind:['compose','code_suggestion'].includes(fix.kind)?fix.kind:'Not available',status: validStatus && (!suggestion || fix.status==='proposed')?fix.status:'Not available',inconsistent:suggestion&&fix.status!=='proposed',reason:textValue(fix.why),for:strings(fix.for),diff:textValue(fix.diff),rpn:arr(fix.rpn).map(row=>({id:textValue(obj(row).id),before:fmt(obj(row).before),after:fmt(obj(row).after)}))};
+    return {id:textValue(fix.id),title:textValue(fix.title),kind:['compose','code_suggestion'].includes(fix.kind)?fix.kind:'Not available',status: validStatus && (!suggestion || fix.status==='proposed')?fix.status:'Not available',inconsistent:suggestion&&fix.status!=='proposed',reason:textValue(fix.why),for:strings(fix.for),diff:textValue(fix.diff),rpn:arr(fix.rpn).map(row=>({id:textValue(obj(row).id),before:fmt(obj(row).before),after:fmt(obj(row).after)})),rollbackFailed:fix.rollback_failed===true&&fix.status==='applied',worse:fix.rollback_failed===true&&fix.worse&&typeof fix.worse==='object'?{id:textValue(fix.worse.id),before:fmt(fix.worse.before),after:fmt(fix.worse.after)}:null,untested:arr(fix.untested).filter(item=>typeof item==='string')};
   });
 }
 export function planPresentation(value) {

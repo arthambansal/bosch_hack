@@ -232,7 +232,9 @@ class Engine:
         if lost:
             LIVE.event("guard", f"DATA LOSS: {sent} votes accepted, only {delivered} reached the database ({lost} lost)")
         elif lost == 0:
-            LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered")
+            extra = (f" ({delivered - sent} vote(s) the client saw as failed/timed out were still stored: "
+                     "the user got an error for a vote that counted)") if delivered > sent else ""
+            LIVE.event("ok", f"No data loss: {sent} accepted, {delivered} delivered{extra}")
 
         window = {}
         for p in cfg["probes"]:

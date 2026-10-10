@@ -11,6 +11,9 @@ from .probes import backlog
 from .contract_v5 import validate_truth
 
 
+MONITOR_WINDOW_S = 15     # "monitoring" = what a health dashboard would show right now
+
+
 class TruthOracle:
     def __init__(self, cfg, prober=None, interval_s=2.0, grace_s=10.0):
         self.cfg = cfg
@@ -175,7 +178,7 @@ class TruthOracle:
             return "unknown"
 
         try:
-            data = self.prober.snapshot(seconds=60)
+            data = self.prober.snapshot(seconds=MONITOR_WINDOW_S)
             if not isinstance(data, dict) or not data:
                 return "unknown"
 
@@ -263,7 +266,9 @@ class TruthOracle:
             has_canary_result = any(r["result"] is not None for r in self._canaries)
 
         every_vote_ok = (
-            (not recent_lost, "No suspected-lost canaries in the last 60 seconds")
+            (not recent_lost, "No suspected-lost canaries in the last 60 seconds" if not recent_lost else
+             f"Canary votes accepted but not stored within {self.grace_s:g}s in the last 60 seconds "
+             f"({canaries['suspected_lost']} suspected lost so far)")
             if has_canary_result
             else (None, "Not available: no canary results yet")
         )

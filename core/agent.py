@@ -123,7 +123,7 @@ class Agent:
             extra=json.dumps(self.extra, default=str)[:3500])
         data, source = ask_json(f"agent_step{self.n}", SYSTEM, user, offline=self.offline, max_tokens=900)
         if not data:
-            return self._fallback()
+            return self._fallback(results)       # keep the coverage rule and 'tried' marks when the AI is unavailable
         if data.get("action") == "finish":
             if self.n > 3 and not need_new:
                 LIVE.event("ai", f"AGENT decides to finish: {str(data.get('reason', ''))[:200]}")

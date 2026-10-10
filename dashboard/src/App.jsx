@@ -37,12 +37,28 @@ export function DashboardWorkspace({ live }) {
     history: <><ViewHeading title="History">Recorded evidence. Global controls remain attached to the current live run.</ViewHeading><HistoryPanel active={view==='history'} fixture={live.source==='fixture'} /></>,
   };
   return <TooltipScope.Provider value={view}><WorkspaceShell live={live} view={view} onView={setView} approvalOpen={approvalOpen} onApproval={() => setApprovalOpen(previous => !previous)} approvalContent={<ApprovalPanel request={state.approval_request} phase={state.phase} connected={connected} />}>
-    <div className="provenance-note"><Icon name="info" size={15} /><p><strong>{live.source === 'fixture' ? 'FIXTURE DATA — static demonstration snapshot.' : 'Snapshot data.'}</strong> Measurement provenance is not supplied. These values may come from mock runs and are not verified Docker measurements.</p></div>
+    <ProvenanceNote live={live} />
     {error && <div className="connection-alert" role="status"><Icon name="info" /><p>{error}</p></div>}
     {/* Retain component state (event filters, node selections) across navigation.
         Polling and the control provider live above these persistent panels. */}
     {VIEWS.map(item => <div key={item.id} id={`view-${item.id}`} role="tabpanel" aria-labelledby={`tab-${item.id}`} tabIndex="0" hidden={view !== item.id}>{panels[item.id]}</div>)}
   </WorkspaceShell></TooltipScope.Provider>;
+}
+
+export function provenanceText(live) {
+  if (live.source === 'fixture') return { tone: 'fixture', title: 'FIXTURE DATA — static demonstration snapshot.', body: 'Not a measurement.' };
+  const p = live.state && typeof live.state.provenance === 'object' && live.state.provenance ? live.state.provenance : null;
+  if (!p || p.measurements !== 'docker_sandbox') return { tone: 'unknown', title: 'Snapshot data.', body: 'Measurement provenance is not supplied. These values may come from mock runs and are not verified Docker measurements.' };
+  const ai = p.ai && typeof p.ai === 'object' ? p.ai : {};
+  const aiText = ai.mode === 'live' ? `AI live: ${ai.provider || 'provider'} ${ai.model || ''}`.trim()
+    : ai.mode === 'cached' ? 'AI: replaying cached answers (--offline)'
+    : ai.mode === 'off' ? 'AI OFF: no API key, agents use deterministic rules' : 'AI status not reported';
+  return { tone: ai.mode === 'off' ? 'warn' : 'live', title: `LIVE measurements from Docker sandbox "${p.project || 'sandbox'}".`, body: aiText + '.' };
+}
+
+function ProvenanceNote({ live }) {
+  const t = provenanceText(live);
+  return <div className={`provenance-note provenance-${t.tone}`}><Icon name="info" size={15} /><p><strong>{t.title}</strong> {t.body}</p></div>;
 }
 
 function LiveSession() {
