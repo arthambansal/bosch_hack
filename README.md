@@ -1,5 +1,17 @@
 # ChaosPilot
 
+Repository: https://github.com/arthambansal/bosch_hack
+
+The isolated Docker voting app is exercised by controlled faults.
+Cartographer proposes source-cited weaknesses for experiments.
+Governor and approval gates constrain every destructive action.
+Observers measure errors, recovery, delivery, and data loss.
+Reporter turns evidence into scores, findings, and replayable scenarios.
+
+This project is licensed under Apache-2.0. The sandbox voting application is
+the Docker Samples Example Voting App, licensed under Apache-2.0; see
+`sandbox/app-src` and its upstream repository for its original notices.
+
 ChaosPilot tests resilience in an isolated Docker Example Voting App.
 Cartographer reads source and proposes testable weaknesses; Experimenter selects faults.
 Deterministic safety checks govern injection, recovery and FMEA scoring.
