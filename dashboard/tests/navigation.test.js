@@ -126,3 +126,15 @@ test('fresh idle Mystery exposes selectable menu but pending approval disables s
  const blocked=rendering.workspace({state:{...state,approval_request:{gate_id:'gate'}},status:'connected',received:now});assert.match(blocked,/<select id="mystery-choice" disabled=""/);
  const fixture=rendering.workspace({state,status:'connected',received:now,source:'fixture'});assert.match(fixture,/<select id="mystery-choice" disabled=""/);
 });
+
+
+test('Diagnostics references Recovery once while critical rollback and untested evidence remain visible', () => {
+ const html=rendering.workspace({source:'fixture',status:'fixture',state:{fixes:[{id:'F1',status:'applied',rollback_failed:true,untested:['E5']}],events:[]}});
+ const diagnostics=html.split('id="view-diagnostics"')[1].split('id="view-recovery"')[0];
+ assert.match(diagnostics,/View recovery evidence/);
+ assert.match(diagnostics,/rollback failure records/);
+ assert.match(diagnostics,/experiments not re-tested/);
+ assert.doesNotMatch(diagnostics,/REPORTED REMEDIATION/);
+ assert.equal((html.match(/REPORTED REMEDIATION/g)||[]).length,1);
+ for(const term of ['p95 latency','MTTD','MTTR','Governor','Provenance','Confidence','Similarity','Rollback','Regression','blast radius','verification status','Untested fixes'])assert.ok(rendering.TERMS[term],term);
+});

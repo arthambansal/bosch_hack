@@ -26,7 +26,7 @@ test('report response type is validated; missing report and transport failure re
 });
 
 const bundle=await build({stdin:{contents:`import React from 'react';import {renderToString} from 'react-dom/server';import {RecordedReplay,ReportViewer} from './src/components/HistoryPanel.jsx';import RegressionPanel from './src/components/RegressionPanel.jsx';export function replay(lines){return renderToString(React.createElement(RecordedReplay,{lines,active:true}));}export function report(report){return renderToString(React.createElement(ReportViewer,{report}));}export function regression(value){return renderToString(React.createElement(RegressionPanel,{value}));}`,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',packages:'external'});
-let source=bundle.outputFiles[0].text;for(const name of ['react','react-dom/server'])source=source.replaceAll(`from "${name}"`,`from ${JSON.stringify(import.meta.resolve(name))}`);
+let source=bundle.outputFiles[0].text;for(const name of ['react','react-dom','react-dom/server'])source=source.replaceAll(`from "${name}"`,`from ${JSON.stringify(import.meta.resolve(name))}`);
 const render=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 test('reports remain escaped original Markdown, empty files are distinguished',()=>{
   const html=render.report('# Heading\n| column |\n<script>alert(1)</script>\n<img onerror=bad>');assert.match(html,/# Heading/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>|<img/);assert.match(html,/Copy report/);assert.match(render.report('  '),/Report file is empty/);

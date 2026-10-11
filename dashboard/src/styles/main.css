@@ -705,3 +705,33 @@ h1 > span { color: #9a633e; }
 .provenance-warn { color: #8a3b12; background: #fbe9dc; border-radius: 8px; padding: 6px 10px; }
 .provenance-warn p { font-size: 12px; }
 .status-rollback_failed { background: #f8dcd7; color: #8f2318; }
+
+/* Presentation polish: existing palette retained pending theme selection. */
+.workflow-edge { stroke-linejoin: round; stroke-linecap: round; }
+.agent-node.is-active { border-width: 1px; outline: 2px solid var(--copper); outline-offset: 0; }
+.workflow-svg { height: auto; max-height: none; }
+.workflow-svg foreignObject { contain: layout; }
+.active-tag { font-size: 9px; }
+.section-heading h2, .panel-body > h2 { font-size: clamp(19px, 1.7vw, 23px); }
+.section-heading p, .workflow-heading p, .p1-note, .missing-data { font-size: 13px; line-height: 1.65; }
+.panel-body, .section-heading { min-width: 0; }
+.evidence-table { font-size: 13px; }
+.evidence-table th { font-size: 12px; }
+.evidence-table td, .detail-list dd { overflow-wrap: anywhere; }
+.remediation-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px; margin-top: 24px; }
+.remediation-summary p { margin-top: 8px; }
+.remediation-summary button { flex-shrink: 0; }
+.technical-terms { padding: 16px 22px; margin-top: 24px; }
+.technical-terms summary { cursor: pointer; font-weight: 650; }
+.technical-terms > div { display: flex; flex-wrap: wrap; gap: 14px 24px; padding-top: 16px; }
+.technical-terms > div > span { display: inline-flex; align-items: center; gap: 6px; }
+button:not(:disabled), summary, a { transition: background-color .15s, border-color .15s, box-shadow .15s; }
+@media (hover: hover) {
+  .history-actions button:not(:disabled):hover, .remediation-summary button:hover { box-shadow: 0 0 0 2px var(--line); }
+  summary:hover { color: var(--teal); }
+  .surface:focus-within { box-shadow: 0 0 0 1px var(--line); }
+  .recorded-events button:hover { border-color: var(--teal); }
+}
+button:disabled { opacity: .55; }
+@media (max-width: 700px) { .remediation-summary { align-items: flex-start; flex-direction: column; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

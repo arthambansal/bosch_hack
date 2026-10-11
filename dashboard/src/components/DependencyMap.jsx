@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { obj, arr, num, running } from '../data.js';
 import { EmptyState, SectionHeading, Icon } from './ui.jsx';
 
 export default function DependencyMap({ state, connected }) {
+  const markerId = `service-arrow-${useId().replace(/:/g, '')}`;
   const services = obj(obj(state.graph).services), edges = arr(obj(state.graph).edges);
-  const names = Object.keys(services), faults = arr(state.faulted), probes = obj(state.probes);
+  const names = Object.keys(services).sort(), faults = arr(state.faulted), probes = obj(state.probes);
   const [selected, setSelected] = useState(null);
   const width = names.length > 6 ? 700 : 500, height = names.length > 6 ? 400 : 290;
   const positions = Object.fromEntries(names.map((name, i) => {
@@ -33,8 +34,8 @@ export default function DependencyMap({ state, connected }) {
     {names.length ? <>
       <div className="topology-scroll" tabIndex="0" role="region" aria-label="Service dependency map">
         <svg className="topology-svg" viewBox={`0 0 ${width} ${height}`} style={{ minWidth: names.length > 6 ? 600 : 360 }}>
-          <defs><marker id="service-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="currentColor" strokeWidth="1.5" /></marker></defs>
-          {edges.map((raw, i) => { const edge = obj(raw), d = connector(edge.from, edge.to); return d ? <path key={i} d={d} className={`service-connection ${selected && [edge.from, edge.to].includes(selected) ? 'focused' : ''}`} markerEnd="url(#service-arrow)"><title>{`${edge.from} → ${edge.to}: ${arr(edge.evidence).join('; ')}`}</title></path> : null; })}
+          <defs>{[['normal', 'var(--graph-edge, #58758b)'], ['focused', 'var(--teal-ink, #075e63)']].map(([kind, color])=><marker key={kind} id={`${markerId}-${kind}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M1 1L9 5L1 9" fill="none" stroke={color} strokeWidth="1.5" /></marker>)}</defs>
+          {edges.map((raw, i) => { const edge = obj(raw), d = connector(edge.from, edge.to), focused=selected && [edge.from, edge.to].includes(selected); return d ? <path key={`${edge.from}-${edge.to}-${i}`} d={d} className={`service-connection ${focused ? 'focused' : ''}`} markerEnd={`url(#${markerId}-${focused?'focused':'normal'})`}><title>{`${edge.from} → ${edge.to}: ${arr(edge.evidence).join('; ')}`}</title></path> : null; })}
           {names.map(name => { const point = positions[name], status = health(name); return <foreignObject key={name} x={point.x - 60} y={point.y - 28} width="120" height="56"><button className={`service-node ${status.tone} ${selected === name ? 'selected' : ''}`} aria-pressed={selected === name} aria-label={`${name}, ${status.label}`} onClick={() => setSelected(selected === name ? null : name)}><strong><i />{name}</strong><small>{String(obj(services[name]).role || 'Role unspecified')}</small></button></foreignObject>; })}
         </svg>
       </div>
